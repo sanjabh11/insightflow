@@ -1,3 +1,4 @@
+
 'use client';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -85,7 +86,7 @@ export function AudioControlsCard({ speechControl }: AudioControlsCardProps) {
               <SelectValue placeholder={voices.length > 0 ? "Select voice" : "No voices for language"} />
             </SelectTrigger>
             <SelectContent>
-              {voices.length === 0 && <SelectItem value="" disabled>No voices available</SelectItem>}
+              {voices.length === 0 && <SelectItem value="no-voices-placeholder" disabled>No voices available</SelectItem>}
 
               {femaleVoices.length > 0 && (
                 <SelectGroup>
