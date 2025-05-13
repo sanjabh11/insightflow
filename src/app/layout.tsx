@@ -1,11 +1,8 @@
 import type {Metadata} from 'next';
 import { GeistSans } from 'geist/font/sans';
-import { GeistMono } from 'geist/font/mono';
+// GeistMono import and usage were removed in a previous step due to a "Module not found" error.
 import './globals.css';
 import { Toaster } from "@/components/ui/toaster";
-
-const geistSans = GeistSans;
-const geistMono = GeistMono;
 
 export const metadata: Metadata = {
   title: 'InsightFlow',
@@ -18,8 +15,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`}>
-      <body className='antialiased'>
+    <html lang="en" className={GeistSans.variable} suppressHydrationWarning>
+      {/*
+        suppressHydrationWarning is added to html and body to prevent mismatches
+        often caused by browser extensions modifying the DOM (e.g., adding attributes).
+        The className for html tag now only includes GeistSans.variable as GeistMono was removed.
+      */}
+      <body className='antialiased' suppressHydrationWarning>
         {children}
         <Toaster />
       </body>
