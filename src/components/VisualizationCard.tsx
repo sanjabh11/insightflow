@@ -8,12 +8,13 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { BarChart3, LayoutGrid, Sigma, ListTree, Percent } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
 
 interface VisualizationCardProps {
   csvDataUri: string | null;
 }
 
-type ParsedCsvRow = Record<string, string | number>;
+type ParsedCsvRow = Record<string, string | number | null>;
 
 interface ColumnStats {
   name: string;
@@ -58,9 +59,9 @@ function analyzeColumn(data: ParsedCsvRow[], header: string): ColumnStats {
   const validValues = values.filter(v => v !== null && v !== undefined && String(v).trim() !== '');
   const missing = values.length - validValues.length;
 
-  const numbers = validValues.map(Number).filter(n => !isNaN(n));
+  const numbers = validValues.map(v => String(v)).map(Number).filter(n => !isNaN(n));
 
-  if (numbers.length / validValues.length > 0.7) { // Heuristic: if 70% are numbers, treat as numerical
+  if (validValues.length > 0 && numbers.length / validValues.length > 0.7) { // Heuristic: if 70% are numbers, treat as numerical
     numbers.sort((a, b) => a - b);
     const sum = numbers.reduce((acc, n) => acc + n, 0);
     const mean = numbers.length > 0 ? sum / numbers.length : 0;
@@ -72,7 +73,7 @@ function analyzeColumn(data: ParsedCsvRow[], header: string): ColumnStats {
       const mid = Math.floor(numbers.length / 2);
       median = numbers.length % 2 !== 0 ? numbers[mid] : (numbers[mid - 1] + numbers[mid]) / 2;
       
-      const lowerHalf = numbers.slice(0, mid);
+      const lowerHalf = numbers.slice(0, numbers.length % 2 !== 0 ? mid : mid);
       const upperHalf = numbers.slice(numbers.length % 2 !== 0 ? mid + 1 : mid);
       
       if (lowerHalf.length > 0) {
@@ -103,7 +104,7 @@ function analyzeColumn(data: ParsedCsvRow[], header: string): ColumnStats {
             let binIndex = Math.floor((val - min) / binSize);
             if (val === max) binIndex = numBins -1; // Ensure max value is in the last bin
             else binIndex = Math.max(0, Math.min(binIndex, numBins - 1));
-            bins[binIndex].value++;
+            if(bins[binIndex]) bins[binIndex].value++;
         });
         distributionData = bins;
     } else if (numbers.length > 0) { // All values are the same
@@ -124,7 +125,7 @@ function analyzeColumn(data: ParsedCsvRow[], header: string): ColumnStats {
     });
     const sortedCounts = Object.entries(counts)
       .sort(([,a],[,b]) => b-a)
-      .map(([value, count]) => ({ value, count, percentage: (count / validValues.length) * 100 }));
+      .map(([value, count]) => ({ value, count, percentage: validValues.length > 0 ? (count / validValues.length) * 100 : 0 }));
     
     return {
       name: header, type: 'categorical', missing, total: values.length,
@@ -148,7 +149,7 @@ function calculateCorrelationMatrix(data: ParsedCsvRow[], numericalColumns: stri
     });
 
   function pearsonCorrelation(xVals: (number | null)[], yVals: (number | null)[]): number {
-    const validPairs = xVals.map((x, i) => [x, yVals[i]]).filter(([x, y]) => x !== null && y !== null) as [number, number][];
+    const validPairs = xVals.map((x, i) => [x, yVals[i]]).filter(([x, y]) => x !== null && y !== null && x !== undefined && y !== undefined) as [number, number][];
     if (validPairs.length < 2) return NaN; // Not enough data points
 
     const n = validPairs.length;
@@ -278,7 +279,7 @@ export function VisualizationCard({ csvDataUri }: VisualizationCardProps) {
               {columnAnalyses.map(col => (
                 <div key={col.name} className="p-3 border rounded-md bg-secondary/30">
                   <h4 className="font-semibold text-md mb-1">{col.name} <span className="text-xs px-1.5 py-0.5 rounded bg-primary/20 text-primary">{col.type}</span></h4>
-                  <p className="text-xs text-muted-foreground">Total: {col.total}, Missing: {col.missing} ({(col.missing/col.total * 100).toFixed(1)}%)</p>
+                  <p className="text-xs text-muted-foreground">Total: {col.total}, Missing: {col.missing} ({col.total > 0 ? (col.missing/col.total * 100).toFixed(1) : 0}%)</p>
                   {col.type === 'numerical' && col.numericalStats && (
                     <ul className="text-xs mt-1 space-y-0.5">
                       <li>Min: {col.numericalStats.min.toFixed(2)}, Max: {col.numericalStats.max.toFixed(2)}</li>
@@ -325,7 +326,7 @@ export function VisualizationCard({ csvDataUri }: VisualizationCardProps) {
                     {selectedColumnAnalysis.type === 'numerical' ? (
                         <BarChart data={selectedColumnAnalysis.distributionData}>
                             <CartesianGrid strokeDasharray="3 3" />
-                            <XAxis dataKey="name" angle={-30} textAnchor="end" height={50} interval={0} />
+                            <XAxis dataKey="name" angle={-30} textAnchor="end" height={70} interval={0} tick={{fontSize: 10}} />
                             <YAxis allowDecimals={false}/>
                             <Tooltip contentStyle={{ background: 'hsl(var(--background))', borderColor: 'hsl(var(--border))', borderRadius: 'var(--radius)'}}/>
                             <Bar dataKey="value" name="Frequency" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
@@ -397,3 +398,4 @@ export function VisualizationCard({ csvDataUri }: VisualizationCardProps) {
     </Card>
   );
 }
+
