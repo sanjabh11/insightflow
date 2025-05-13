@@ -13,7 +13,7 @@ interface FileUploadCardProps {
   currentFile: { name: string; type: string; dataUri: string } | null;
 }
 
-const MAX_FILE_SIZE_MB = 10;
+const MAX_FILE_SIZE_MB = 60; // Increased to 60MB
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
 
 const ACCEPTED_FILE_TYPES = {

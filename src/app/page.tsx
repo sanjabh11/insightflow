@@ -9,13 +9,18 @@ import { VisualizationCard } from '@/components/VisualizationCard';
 import { AudioControlsCard } from '@/components/AudioControlsCard';
 import { analyzeUploadedContent, type AnalyzeUploadedContentOutput } from '@/ai/flows/analyze-uploaded-content';
 import { answerWithWebSearch, type AnswerWithWebSearchOutput } from '@/ai/flows/answer-with-web-search';
+import { generateImage as generateImageFlow, type GenerateImageOutput } from '@/ai/flows/generate-image-flow';
 import { useToast } from "@/hooks/use-toast";
 import { useSpeech } from '@/hooks/useSpeech';
+
+// Combined type for answer data, including potential image URI
+type CombinedAnswerData = (AnalyzeUploadedContentOutput | AnswerWithWebSearchOutput) & { generatedImageUri?: string };
+
 
 export default function InsightFlowPage() {
   const [currentFile, setCurrentFile] = useState<{ name: string; type: string; dataUri: string } | null>(null);
   const [question, setQuestion] = useState<string>("");
-  const [answerData, setAnswerData] = useState<AnalyzeUploadedContentOutput | AnswerWithWebSearchOutput | null>(null);
+  const [answerData, setAnswerData] = useState<CombinedAnswerData | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const { toast } = useToast();
 
@@ -53,20 +58,52 @@ export default function InsightFlowPage() {
     }
     setIsLoading(true);
     setAnswerData(null);
+    let finalAnswerData: CombinedAnswerData | null = null;
+
     try {
-      let result;
       if (currentFile) {
-        result = await analyzeUploadedContent({
+        const analysisResult = await analyzeUploadedContent({
           fileDataUri: currentFile.dataUri,
           question: question,
+          fileType: currentFile.type,
         });
+        finalAnswerData = analysisResult;
+
+        if (analysisResult.requiresImageGeneration && analysisResult.imageGenerationPrompt &&
+            (currentFile.type === 'application/pdf' || currentFile.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')) {
+          try {
+            toast({ title: "Generating Image", description: "Please wait while the AI creates a visual representation." });
+            const imageResult: GenerateImageOutput = await generateImageFlow({
+              documentDataUri: currentFile.dataUri,
+              prompt: analysisResult.imageGenerationPrompt,
+            });
+            if (imageResult.imageDataUri) {
+              finalAnswerData = { ...analysisResult, generatedImageUri: imageResult.imageDataUri };
+              toast({ title: "Image Generated", description: "The AI has generated an image based on your request." });
+            } else {
+               toast({ title: "Image Generation Note", description: "Could not generate an image for this request. Displaying textual answer.", variant: "default" });
+            }
+          } catch (imgError) {
+            console.error("Error generating image:", imgError);
+            const imgErrorMessage = imgError instanceof Error ? imgError.message : "Unknown image generation error.";
+            toast({
+              title: "Image Generation Error",
+              description: `Failed to generate image: ${imgErrorMessage}`,
+              variant: "destructive",
+            });
+            // Keep the textual answer even if image generation fails
+          }
+        }
       } else {
-        result = await answerWithWebSearch({ question: question });
+        finalAnswerData = await answerWithWebSearch({ question: question });
       }
-      setAnswerData(result);
-      if (result && result.answer && speech.supported) { // Speak the answer if supported
-        speech.speak(result.answer);
+      
+      setAnswerData(finalAnswerData);
+
+      if (finalAnswerData && finalAnswerData.answer && speech.supported) {
+        speech.speak(finalAnswerData.answer);
       }
+
     } catch (error) {
       console.error("Error processing query:", error);
       const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
@@ -75,9 +112,9 @@ export default function InsightFlowPage() {
         description: `Failed to get an answer: ${errorMessage}`,
         variant: "destructive",
       });
-      const errorAnswer = { answer: `Sorry, I encountered an error: ${errorMessage}`, sources: [] };
+      const errorAnswer = { answer: `Sorry, I encountered an error: ${errorMessage}`, sources: [], requiresImageGeneration: false };
       setAnswerData(errorAnswer);
-      if (speech.supported) { // Speak the error message if supported
+      if (speech.supported) {
         speech.speak(errorAnswer.answer);
       }
     } finally {
