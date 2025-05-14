@@ -34,11 +34,19 @@ export default function InsightFlowPage() {
 
   useEffect(() => {
     if (speech.error) {
-      toast({
-        title: "Speech Error",
-        description: `${speech.error.error}${speech.error.message ? `: ${speech.error.message}` : ''}`,
-        variant: "destructive",
-      });
+      if (speech.error.error === 'Speech synthesis error' && speech.error.message === 'interrupted') {
+        toast({
+          title: "Speech Interrupted",
+          description: "Speech was interrupted. You may continue or try again.",
+          variant: "default",
+        });
+      } else {
+        toast({
+          title: "Speech Error",
+          description: `${speech.error.error}${speech.error.message ? `: ${speech.error.message}` : ''}`,
+          variant: "destructive",
+        });
+      }
     }
   }, [speech.error, toast]);
 
@@ -122,6 +130,32 @@ export default function InsightFlowPage() {
     }
   };
 
+  // EDA trigger state
+  const [isEDAloading, setEDAloading] = useState<boolean>(false);
+  const [edaResult, setEdaResult] = useState<CombinedAnswerData | null>(null);
+  const showEDAButton = currentFile && currentFile.type === 'text/csv';
+
+  // EDA handler for CSV only
+  const handleEDA = async () => {
+    if (!currentFile) return;
+    setEDAloading(true);
+    setEdaResult(null);
+    try {
+      const analysisResult = await analyzeUploadedContent({
+        fileDataUri: currentFile.dataUri,
+        question: 'Run EDA',
+        fileType: currentFile.type,
+      });
+      setEdaResult(analysisResult);
+      toast({ title: "EDA Complete", description: "Exploratory Data Analysis has completed for your CSV file." });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Unknown error during EDA.";
+      toast({ title: "EDA Error", description: errorMessage, variant: "destructive" });
+    } finally {
+      setEDAloading(false);
+    }
+  };
+
   return (
     <div className="flex flex-col min-h-screen bg-secondary/50">
       <AppHeader />
@@ -137,6 +171,17 @@ export default function InsightFlowPage() {
               isLoading={isLoading}
               speechControl={speech}
             />
+            {/* EDA Button for CSVs only */}
+            {showEDAButton && (
+              <button
+                className={`w-full mt-2 py-2 px-4 rounded bg-primary text-white font-semibold ${isEDAloading ? 'opacity-60 cursor-not-allowed' : 'hover:bg-primary/80'}`}
+                onClick={handleEDA}
+                disabled={isEDAloading || isLoading}
+                aria-label="Run EDA"
+              >
+                {isEDAloading ? 'Running EDA...' : 'Run EDA (CSV Only)'}
+              </button>
+            )}
           </div>
 
           <div className="lg:col-span-2 space-y-6">
@@ -145,7 +190,28 @@ export default function InsightFlowPage() {
               isLoading={isLoading}
               speechControl={speech}
             />
-            {currentFile && currentFile.type === 'text/csv' && (
+            {/* Follow-up Questions Button: Only show after first answer for uploaded file */}
+            {currentFile && answerData && (
+              <button
+                className="w-full mt-2 py-2 px-4 rounded bg-secondary text-primary font-semibold border border-primary hover:bg-primary/10"
+                onClick={() => {
+                  setQuestion("");
+                  setAnswerData(null);
+                }}
+                aria-label="Ask Follow-up Question"
+              >
+                Ask Follow-up Question
+              </button>
+            )}
+            {showEDAButton && edaResult && (
+              <AnswerDisplayCard
+                answerData={edaResult}
+                isLoading={isEDAloading}
+                speechControl={speech}
+              />
+            )}
+            {/* Modular EDA: Only show VisualizationCard after EDA is run and result is available */}
+            {showEDAButton && edaResult && (
               <VisualizationCard csvDataUri={currentFile.dataUri} />
             )}
           </div>

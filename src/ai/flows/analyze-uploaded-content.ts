@@ -35,10 +35,12 @@ export type AnalyzeUploadedContentOutput = z.infer<typeof AnalyzeUploadedContent
 export async function analyzeUploadedContent(
   input: AnalyzeUploadedContentInput
 ): Promise<AnalyzeUploadedContentOutput> {
+  console.time('analyzeUploadedContent_total');
   // The flow will determine if image generation is needed and provide the prompt.
   // The actual image generation call will be made by the client if 'requiresImageGeneration' is true.
   // So, 'generatedImageUri' will initially be undefined from this flow.
   const result = await analyzeUploadedContentFlow(input);
+  console.timeEnd('analyzeUploadedContent_total');
   return {...result, generatedImageUri: undefined };
 }
 
@@ -70,7 +72,14 @@ const analyzeUploadedContentFlow = ai.defineFlow(
     outputSchema: AnalyzeUploadedContentOutputSchema,
   },
   async input => {
-    const {output} = await analyzeUploadedContentPrompt(input);
+    console.time('analyzeUploadedContentFlow_total');
+    const {output} = await (async () => {
+      console.time('analyzeUploadedContentPrompt_total');
+      const result = await analyzeUploadedContentPrompt(input);
+      console.timeEnd('analyzeUploadedContentPrompt_total');
+      return result;
+    })();
+    console.timeEnd('analyzeUploadedContentFlow_total');
     if (!output) {
       // Fallback in case the LLM fails to produce structured output
       return {

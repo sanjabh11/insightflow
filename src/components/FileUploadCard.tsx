@@ -2,6 +2,7 @@
 
 import type { ChangeEvent } from 'react';
 import { useState } from 'react';
+import Papa from 'papaparse';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -60,24 +61,117 @@ export function FileUploadCard({ onFileChange, currentFile }: FileUploadCardProp
     const reader = new FileReader();
     reader.onload = (e) => {
       if (e.target?.result) {
-        onFileChange({
-          name: file.name,
-          type: file.type,
-          dataUri: e.target.result as string,
-        });
+        try {
+          if (file.type === 'text/csv') {
+            const csvContent = atob((e.target.result as string).split(',')[1] || '');
+            if (!csvContent.trim()) {
+              toast({
+                title: "CSV Error",
+                description: "The uploaded CSV file appears empty or invalid.",
+                variant: "destructive",
+              });
+              return;
+            }
+
+            // PapaParse streaming parse with limits
+            let rowCount = 0;
+            let columnCount = 0;
+            let parseError = null;
+            let parseAborted = false;
+            const MAX_ROWS = 10000;
+            const MAX_COLS = 1000;
+            const start = Date.now();
+            Papa.parse(csvContent, {
+              header: true,
+              worker: false,
+              step: function(row, parser) {
+                if (rowCount === 0) {
+                  columnCount = Object.keys(row.data).length;
+                  if (columnCount > MAX_COLS) {
+                    parseError = `CSV has too many columns (${columnCount}). Limit is ${MAX_COLS}.`;
+                    parser.abort();
+                    parseAborted = true;
+                    return;
+                  }
+                }
+                rowCount++;
+                if (rowCount > MAX_ROWS) {
+                  parseError = `CSV has too many rows (${rowCount}). Limit is ${MAX_ROWS}.`;
+                  parser.abort();
+                  parseAborted = true;
+                  return;
+                }
+                if (Date.now() - start > 5000) {
+                  parseError = `CSV parsing took too long. Please upload a smaller or simpler file.`;
+                  parser.abort();
+                  parseAborted = true;
+                  return;
+                }
+              },
+              complete: function() {
+                if (parseError) {
+                  toast({
+                    title: "CSV Error",
+                    description: parseError,
+                    variant: "destructive",
+                  });
+                  return;
+                }
+                onFileChange({
+                  name: file.name,
+                  type: file.type,
+                  dataUri: e.target.result as string,
+                });
+                toast({
+                  title: "File uploaded",
+                  description: `${file.name} has been successfully uploaded.`,
+                });
+              },
+              error: function(err) {
+                toast({
+                  title: "CSV Parsing Error",
+                  description: err.message || "Failed to parse CSV file.",
+                  variant: "destructive",
+                });
+              }
+            });
+            if (parseAborted) return;
+          } else {
+            onFileChange({
+              name: file.name,
+              type: file.type,
+              dataUri: e.target.result as string,
+            });
+            toast({
+              title: "File uploaded",
+              description: `${file.name} has been successfully uploaded.`,
+            });
+          }
+        } catch (err) {
+          toast({
+            title: "File processing error",
+            description: "There was a problem reading or parsing your file.",
+            variant: "destructive",
+          });
+        }
+      } else {
         toast({
-          title: "File uploaded",
-          description: `${file.name} has been successfully uploaded.`,
+          title: "File read error",
+          description: "Could not read the selected file.",
+          variant: "destructive",
         });
       }
     };
+
     reader.onerror = () => {
       toast({
         title: "File read error",
-        description: "Could not read the selected file.",
+        description: "Could not read the selected file. Please try again or use a different file.",
         variant: "destructive",
       });
+      onFileChange(null);
     };
+
     reader.readAsDataURL(file);
   };
 
