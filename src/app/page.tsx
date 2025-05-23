@@ -47,6 +47,32 @@ import { useSpeech } from '@/hooks/useSpeech';
 // Combined type for answer data, including potential image URI
 type CombinedAnswerData = (AnalyzeUploadedContentOutput | AnswerWithWebSearchOutput) & { generatedImageUri?: string };
 
+// Helper: Detect if the answer indicates the file/image is not relevant
+function shouldFallbackToWebSearch(answer: string): boolean {
+  return /not relevant to the question|does not contain information|cannot provide instructions|image provided does not contain|file provided does not contain|I am sorry, but the image|I am sorry, but the file|no relevant information|does not answer your question|unable to answer based on the provided/i.test(answer);
+}
+
+// Helper: Parse JSON answers and extract the 'answer' field
+function extractAnswer(raw: any): { answer: string, sources: string[] } {
+  if (typeof raw === 'string') {
+    try {
+      // Security: Only parse if it looks like a JSON object
+      if (raw.trim().startsWith('{') && raw.trim().endsWith('}')) {
+        const parsed = JSON.parse(raw);
+        if (typeof parsed === 'object' && parsed.answer) {
+          return { answer: parsed.answer, sources: Array.isArray(parsed.sources) ? parsed.sources : [] };
+        }
+      }
+    } catch {
+      // Not JSON, return as is
+      return { answer: raw, sources: [] };
+    }
+    return { answer: raw, sources: [] };
+  } else if (typeof raw === 'object' && raw !== null && raw.answer) {
+    return { answer: raw.answer, sources: Array.isArray(raw.sources) ? raw.sources : [] };
+  }
+  return { answer: String(raw), sources: [] };
+}
 
 export default function InsightFlowPage() {
   const [currentFile, setCurrentFile] = useState<{ name: string; type: string; dataUri: string } | null>(null);
@@ -106,13 +132,13 @@ export default function InsightFlowPage() {
     setAnswerData(null);
     let finalAnswerData: CombinedAnswerData | null = null;
 
+    const detectLanguage = (text: string) => {
+      // Simple check: Hindi Unicode range
+      return /[\u0900-\u097F]/.test(text) ? 'hi-IN' : 'en-US';
+    };
+    const questionLanguage = detectLanguage(question);
+
     try {
-      // Detect question language (simple heuristic, can be improved)
-      const detectLanguage = (text: string) => {
-        // Simple check: Hindi Unicode range
-        return /[\u0900-\u097F]/.test(text) ? 'hi-IN' : 'en-US';
-      };
-      const questionLanguage = detectLanguage(question);
       // Build context from all previous Q&A in current thread, with explicit system prompt for context resolution
       const systemPrompt = `SYSTEM: You are an AI assistant. If the latest user question is a follow-up or uses pronouns or ambiguous references (like 'he', 'she', 'they', 'the person'), always resolve them using the latest relevant entity in the conversation history. Never ask the user to repeat the name. If the user requests a web search, use the most relevant previous question as the web search query. Use the full conversation history below to resolve context.`;
       const contextQA = qaHistory.map((qa, idx) => `Q${idx+1}: ${qa.question}\nA${idx+1}: ${qa.answer}`).join('\n');
@@ -122,30 +148,48 @@ export default function InsightFlowPage() {
         const analysisResult = await analyzeUploadedContent({
           fileDataUri: currentFile.dataUri,
           question: fullContext,
-          fileType: currentFile.type,
-          language: questionLanguage // Pass to backend/LLM
+          fileType: currentFile.type
         });
         finalAnswerData = analysisResult;
 
+        // Always extract the answer for further checks
+        const extracted = extractAnswer(analysisResult);
+
         // If backend signals web search is needed, trigger it automatically
-        if (analysisResult.requiresWebSearch) {
-          // Try to extract the last non-follow-up question for web search
+        if ('requiresWebSearch' in analysisResult && analysisResult.requiresWebSearch) {
+          setAnswerData({ answer: "I could not find your query in this file so I will be searching internet now. Please stand by.", sources: [] });
           const lastRelevant = [...qaHistory].reverse().find(qa => !/follow[- ]?up|search|internet|context|find out|look at/i.test(qa.question));
           const webSearchQuery = lastRelevant ? lastRelevant.question : question;
-          // Use the extracted question for web search
           finalAnswerData = await answerWithWebSearch({ question: webSearchQuery });
+        } else if (
+          extracted.answer &&
+          (shouldFallbackToWebSearch(extracted.answer) || (Array.isArray(extracted.sources) && extracted.sources.some(s => /search|web search/i.test(s))))
+        ) {
+          setAnswerData({ answer: "I could not find your query in this file so I will be searching internet now. Please stand by.", sources: [] });
+          finalAnswerData = await answerWithWebSearch({ question });
+        } else {
+          // Use the extracted answer for display
+          setAnswerData(extracted);
         }
 
-        if (finalAnswerData && finalAnswerData.requiresImageGeneration && finalAnswerData.imageGenerationPrompt &&
-            (currentFile.type === 'application/pdf' || currentFile.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')) {
+        // Type guard for requiresImageGeneration and imageGenerationPrompt
+        if (
+          finalAnswerData &&
+          typeof finalAnswerData === 'object' &&
+          'requiresImageGeneration' in finalAnswerData &&
+          (finalAnswerData as any).requiresImageGeneration &&
+          'imageGenerationPrompt' in finalAnswerData &&
+          (finalAnswerData as any).imageGenerationPrompt &&
+          (currentFile.type === 'application/pdf' || currentFile.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+        ) {
           try {
             toast({ title: "Generating Image", description: "Please wait while the AI creates a visual representation." });
             const imageResult: GenerateImageOutput = await generateImageFlow({
               documentDataUri: currentFile.dataUri,
-              prompt: finalAnswerData.imageGenerationPrompt,
+              prompt: (finalAnswerData as any).imageGenerationPrompt,
             });
             if (imageResult.imageDataUri) {
-              finalAnswerData.generatedImageUri = imageResult.imageDataUri;
+              (finalAnswerData as any).generatedImageUri = imageResult.imageDataUri;
             }
           } catch (imageError) {
             toast({ title: "Image Generation Error", description: "Failed to generate image." });
@@ -163,7 +207,8 @@ export default function InsightFlowPage() {
 
       // Append to Q&A history
       if (finalAnswerData && question) {
-        setQaHistory(prev => [...prev, { question, answer: finalAnswerData.answer ?? "" }]);
+        const extractedQA = extractAnswer(finalAnswerData);
+        setQaHistory(prev => [...prev, { question, answer: extractedQA.answer ?? "" }]);
       }
 
       if (finalAnswerData && finalAnswerData.answer && speech.supported) {
@@ -225,8 +270,9 @@ export default function InsightFlowPage() {
   </div>
   <div className="mt-1 text-sm text-blue-900/70 dark:text-gray-400 font-medium">AI-powered file analysis and Q&A</div>
 </header>
-      <main className="w-full max-w-5xl mx-auto flex flex-col md:flex-row gap-8 px-4 md:px-0">
-        <div className="flex-1 flex flex-col gap-6 max-w-md mx-auto md:mx-0 overflow-y-auto"> {/* Make the left column scrollable */}
+      <main className="w-full max-w-7xl mx-auto flex flex-row gap-8 px-4 md:px-0">
+        {/* Left Panel */}
+        <div className="flex flex-col gap-6 max-w-xs w-full md:w-1/4 overflow-y-auto">
           <FileUploadCard onFileChange={handleFileChange} currentFile={currentFile} />
           <QueryInputCard
             question={question}
@@ -236,8 +282,28 @@ export default function InsightFlowPage() {
             speechControl={speech}
           />
           <AudioControlsCard speechControl={speech} />
-          {/* EDA Button for CSVs only */}
-          {showEDAButton && (
+        </div>
+        {/* Middle Panel: Q&A, Answer, EDA, Follow-up */}
+        <div className="flex-1 flex flex-col gap-6 w-full md:w-2/4">
+          {/* Q&A thread: show all Q&A pairs */}
+          <div className="space-y-4">
+            {qaHistory.map((qa, idx) => (
+              <div key={idx} className="border rounded p-4 bg-white/70">
+                <div className="font-semibold text-primary mb-1">Q{idx + 1}: {qa.question}</div>
+                <div className="text-gray-900">{qa.answer}</div>
+              </div>
+            ))}
+          </div>
+          {/* Show latest answer in card (for speech, etc) */}
+          {answerData && (
+            <AnswerDisplayCard
+              answerData={answerData}
+              isLoading={isLoading}
+              speechControl={speech}
+            />
+          )}
+          {/* EDA Button for CSVs only - always visible in middle panel when applicable */}
+          {showEDAButton && !edaResult && (
             <button
               className={`w-full mt-2 py-2 px-4 rounded bg-primary text-white font-semibold ${isEDAloading ? 'opacity-60 cursor-not-allowed' : 'hover:bg-primary/80'}`}
               onClick={handleEDA}
@@ -247,9 +313,27 @@ export default function InsightFlowPage() {
               {isEDAloading ? 'Running EDA...' : 'Run EDA (CSV Only)'}
             </button>
           )}
+          {/* Modular EDA: Only show VisualizationCard after EDA is run and result is available */}
+          {showEDAButton && edaResult && (
+            <VisualizationCard csvDataUri={currentFile.dataUri} />
+          )}
+          {/* Follow-up Questions Button: Only show after first answer for uploaded file */}
+          {currentFile && answerData && (
+            <button
+              className="w-full mt-2 py-2 px-4 rounded bg-secondary text-primary font-semibold border border-primary hover:bg-primary/10"
+              onClick={() => {
+                setQuestion("");
+                setAnswerData(null);
+              }}
+              aria-label="Ask Follow-up Question"
+            >
+              Ask Follow-up Question
+            </button>
+          )}
         </div>
-        <div className="flex-[2] flex flex-col gap-6">
-          {/* Modular Q&A thread: show all previous conversations */}
+        {/* Right Panel: Conversation history and actions */}
+        <div className="flex flex-col gap-6 max-w-xs w-full md:w-1/4 overflow-y-auto">
+          {/* Conversation History */}
           {conversations.length > 0 && (
             <div className="mb-4">
               <div className="flex items-center justify-between mb-2">
@@ -282,8 +366,7 @@ export default function InsightFlowPage() {
                   <div
                     key={cIdx}
                     className="border rounded p-2 bg-gray-50 transition relative"
-                aria-label="Run EDA"
-              >
+                    aria-label="Run EDA"
                   >
                     {/* Collapse/expand and rename controls */}
                     <div className="flex items-center justify-between mb-1">
@@ -345,36 +428,6 @@ export default function InsightFlowPage() {
               </div>
             </div>
           )}
-          {/* Modular Q&A thread: show all Q&A pairs */}
-          <div className="space-y-4">
-            {qaHistory.map((qa, idx) => (
-              <div key={idx} className="border rounded p-4 bg-white/70">
-                <div className="font-semibold text-primary mb-1">Q{idx + 1}: {qa.question}</div>
-                <div className="text-gray-900">{qa.answer}</div>
-              </div>
-            ))}
-          </div> 
-          {/* Show latest answer in card (for speech, etc) */}
-          {answerData && (
-            <AnswerDisplayCard
-              answerData={answerData}
-              isLoading={isLoading}
-              speechControl={speech}
-            />
-          )}
-          {/* Follow-up Questions Button: Only show after first answer for uploaded file */}
-          {currentFile && answerData && (
-            <button
-              className="w-full mt-2 py-2 px-4 rounded bg-secondary text-primary font-semibold border border-primary hover:bg-primary/10"
-              onClick={() => {
-                setQuestion("");
-                setAnswerData(null);
-              }}
-              aria-label="Ask Follow-up Question"
-            >
-              Ask Follow-up Question
-            </button>
-          )}
           {/* New Question Button: Always visible if there is any Q&A history */}
           {qaHistory.length > 0 && (
             <button
@@ -384,6 +437,7 @@ export default function InsightFlowPage() {
                 setQaHistory([]);
                 setQuestion("");
                 setAnswerData(null);
+                setCurrentFile(null); // Auto-clear the loaded file when starting a new conversation
               }}
               aria-label="Start New Question"
             >
@@ -404,17 +458,6 @@ export default function InsightFlowPage() {
             >
               Erase History
             </button>
-          )}
-          {showEDAButton && edaResult && (
-            <AnswerDisplayCard
-              answerData={edaResult}
-              isLoading={isEDAloading}
-              speechControl={speech}
-            />
-          )}
-          {/* Modular EDA: Only show VisualizationCard after EDA is run and result is available */}
-          {showEDAButton && edaResult && (
-            <VisualizationCard csvDataUri={currentFile.dataUri} />
           )}
         </div>
       </main>
