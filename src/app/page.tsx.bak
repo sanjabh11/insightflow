@@ -1,0 +1,758 @@
+"use client";
+
+import { useState, useEffect } from 'react';
+import { useToastManager } from '@/hooks/use-toast-manager';
+import { useLocalStorageConversations } from '@/hooks/use-local-storage';
+import { useSpeech } from '@/hooks/use-speech';
+
+// Mock components for now
+import { FileUploadCard } from '@/components/FileUploadCard';
+import { QueryInputCard } from '@/components/QueryInputCard';
+import { AnswerDisplayCard } from '@/components/AnswerDisplayCard';
+import { VisualizationCard } from '@/components/VisualizationCard';
+import { AudioControlsCard } from '@/components/AudioControlsCard';
+import dynamic from 'next/dynamic';
+
+const DarkModeToggle = dynamic(() => import('@/components/DarkModeToggle').then(mod => mod.DarkModeToggle), { ssr: false });
+
+// Types
+type FileState = {
+  dataUri: string;
+  type: string;
+  name: string;
+};
+
+type QAHistoryItem = {
+  question: string;
+  answer: string;
+};
+
+type ConversationItem = {
+  id: string;
+  title: string;
+  history: QAHistoryItem[];
+  collapsed: boolean;
+};
+
+type CombinedAnswerData = {
+  answer: string;
+  sources: string[];
+  requiresWebSearch: boolean;
+  requiresImageGeneration: boolean;
+  imageGenerationPrompt?: string;
+  generatedImageUri?: string;
+};
+
+type AnalyzeUploadedContentInput = {
+  question: string;
+  fileDataUri: string;
+  fileType: string;
+  language: string;
+  requiresWebSearch: boolean;
+  requiresImageGeneration: boolean;
+  imageGenerationPrompt?: string;
+};
+
+type WebSearchInput = {
+  question: string;
+  fileContent: string;
+};
+
+type ImageGenerationInput = {
+  prompt: string;
+  documentDataUri: string;
+};
+
+type ImageGenerationOutput = {
+  imageDataUri: string;
+};
+
+const analyzeUploadedContent = async (input: AnalyzeUploadedContentInput): Promise<CombinedAnswerData> => {
+  // Mock implementation for now
+  return {
+    answer: 'Sample answer',
+    sources: [],
+    requiresWebSearch: false,
+    requiresImageGeneration: false,
+    imageGenerationPrompt: undefined
+  };
+};
+
+const answerWithWebSearch = async (input: WebSearchInput): Promise<CombinedAnswerData> => {
+  // Mock implementation for now
+  return {
+    answer: 'Web search answer',
+    sources: [],
+    requiresWebSearch: true,
+    requiresImageGeneration: false
+  };
+};
+
+const generateImageFlow = async (input: ImageGenerationInput): Promise<ImageGenerationOutput> => {
+  // Mock implementation for now
+  return {
+    imageDataUri: 'data:image/png;base64,'
+  };
+};
+
+// Version 2.9.63: Main component implementation moved to the end of file
+// Keeping this section for documentation purposes
+
+  const handleFileUpload = (file: FileState | null) => {
+    setCurrentFile(file);
+    setAnswerData(null);
+    setQaHistory([]);
+  };
+
+  const handleQuestionSubmit = async (input: string) => {
+    if (!input) return;
+
+    const question = input.trim();
+    if (!question) {
+      toast({ title: "Empty question", description: "Please enter a question.", variant: "destructive" });
+      return;
+    }
+
+    setQuestionInput(question);
+    setIsLoading(true);
+
+    try {
+      let finalAnswerData: CombinedAnswerData | null = null;
+
+      if (currentFile) {
+        const analysisResult = await analyzeUploadedContent({
+          question,
+          fileDataUri: currentFile.dataUri,
+          fileType: currentFile.type,
+          language,
+          requiresWebSearch: false,
+          requiresImageGeneration: false
+        });
+
+        if (analysisResult.requiresWebSearch) {
+          const webSearchResult = await answerWithWebSearch({
+            question,
+            fileContent: analysisResult.answer
+          });
+
+          finalAnswerData = webSearchResult;
+        } else if (analysisResult.requiresImageGeneration && analysisResult.imageGenerationPrompt) {
+          const imageResult = await generateImageFlow({
+            prompt: analysisResult.imageGenerationPrompt,
+            documentDataUri: currentFile.dataUri
+          });
+
+          finalAnswerData = {
+            ...analysisResult,
+            generatedImageUri: imageResult.imageDataUri
+          };
+        } else {
+          finalAnswerData = analysisResult;
+        }
+      }
+
+      setAnswerData(finalAnswerData);
+
+      if (finalAnswerData?.answer) {
+        const newQaItem: QAHistoryItem = { question, answer: finalAnswerData.answer };
+        setQaHistory(prev => [...prev, newQaItem]);
+      }
+
+      if (finalAnswerData?.answer && speech.supported) {
+        speech.speak(finalAnswerData.answer, language);
+      }
+
+    } catch (error) {
+      console.error("Error processing query:", error);
+      toast({ title: "Error", description: "Failed to process your question. Please try again.", variant: "destructive" });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Detect question language (simple heuristic, can be improved)
+  const detectLanguage = (text: string): string => {
+    // Simple heuristic: if text contains CJK characters, assume Chinese
+    const hasCJK = /[\u4E00-\u9FFF\u3040-\u30FF\u3130-\u318F]/.test(text);
+    return hasCJK ? 'zh' : 'en';
+  };
+
+  // EDA trigger state
+  const [isEDAloading, setEDAloading] = useState<boolean>(false);
+  const [edaResult, setEdaResult] = useState<CombinedAnswerData | null>(null);
+  const showEDAButton = currentFile && currentFile.type === 'text/csv';
+
+  // EDA handler for CSV only
+  const handleEDA = async () => {
+    if (!currentFile) return;
+
+    setEDAloading(true);
+    try {
+      const analysisResult = await analyzeUploadedContent({
+        fileDataUri: currentFile.dataUri,
+        question: "Please perform exploratory data analysis on this CSV file.",
+        fileType: currentFile.type,
+        language,
+        requiresWebSearch: false,
+        requiresImageGeneration: false
+      });
+
+      setEdaResult(analysisResult);
+    } catch (error) {
+      console.error("Error performing EDA:", error);
+      toast({ title: "Error", description: "Failed to analyze the CSV file.", variant: "destructive" });
+    } finally {
+      setEDAloading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-background text-foreground">
+      <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+        <div className="container flex h-14 max-w-screen-2xl items-center">
+          <div className="mr-4 hidden md:flex">
+            <a className="mr-6 flex items-center space-x-2" href="/">
+              <span className="hidden font-bold sm:inline-block">InsightFlow</span>
+            </a>
+          </div>
+          <div className="flex flex-1 items-center justify-between space-x-2 md:justify-end">
+            <div className="w-full flex-1 md:w-auto md:flex-none">
+              <button
+                className="inline-flex items-center rounded-md font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background shadow-sm hover:bg-accent hover:text-accent-foreground h-9 px-4 py-2 relative w-full justify-start text-sm text-muted-foreground sm:pr-12 md:w-40 lg:w-64"
+                type="button"
+                aria-haspopup="dialog"
+                aria-expanded="false"
+                aria-controls="radix-:R1mcq:"
+                data-state="closed"
+              >
+                <span className="hidden lg:inline-flex">Search documentation...</span>
+                <span className="inline-flex lg:hidden">Search...</span>
+                <kbd className="pointer-events-none absolute right-1.5 top-1.5 hidden h-6 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium opacity-100 sm:flex">
+                  <span className="text-xs">⌘</span>K
+                </kbd>
+              </button>
+            </div>
+            <DarkModeToggle />
+          </div>
+        </div>
+      </header>
+      <main className="container py-6">
+        <section className="mx-auto w-full max-w-4xl space-y-4">
+          <FileUploadCard onFileUpload={handleFileUpload} />
+          <QueryInputCard
+            onSubmit={handleQuestionSubmit}
+            isLoading={isLoading}
+            currentFile={currentFile}
+          />
+          {/* Show EDA button for CSV files */}
+          {showEDAButton && (
+            <button
+              className="w-full py-2 px-4 rounded bg-secondary text-primary font-semibold border border-primary hover:bg-primary/10"
+              onClick={handleEDA}
+              disabled={isEDAloading}
+              aria-label="Perform Exploratory Data Analysis"
+            >
+              {isEDAloading ? "Analyzing..." : "Perform Exploratory Data Analysis"}
+            </button>
+          )}
+          {/* Previous conversations */}
+          {conversations.length > 0 && (
+            <div className="border rounded p-4 bg-white/70">
+              <h3 className="font-semibold mb-2">Previous Conversations</h3>
+              <div className="space-y-2">
+                {conversations.map((conv, cIdx) => (
+                  <div key={cIdx} className="border rounded p-2">
+                    <div className="flex justify-between items-center">
+                      <h4 className="font-medium">{conv.title}</h4>
+                      <div className="space-x-2">
+                        <button
+                          className="text-sm text-blue-600 hover:underline"
+                          onClick={() => {
+                            const updatedConversations = [...conversations];
+                            updatedConversations[cIdx].collapsed = !updatedConversations[cIdx].collapsed;
+                            setConversations(updatedConversations);
+                          }}
+                          aria-label={`Toggle conversation ${cIdx + 1}`}
+                        >
+                          {conv.collapsed ? "Expand" : "Collapse"}
+                        </button>
+                        <button
+                          className="text-sm text-blue-600 hover:underline"
+                          onClick={() => {
+                            setQaHistory(conv.history);
+                            setConversations(prev => prev.filter((_, idx) => idx !== cIdx));
+                          }}
+                          aria-label={`Revisit conversation ${cIdx + 1}`}
+                        >
+                          Continue
+                        </button>
+                      </div>
+                    </div>
+                    {!conv.collapsed && (
+                      <div>
+                        {conv.history.map((qa, idx) => (
+                          <div key={idx} className="mb-1">
+                            <span className="font-semibold text-primary">Q{idx + 1}:</span> {qa.question}
+                            <div className="ml-4 text-gray-900">{qa.answer}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {/* Modular Q&A thread: show all Q&A pairs */}
+          <div className="space-y-4">
+            {qaHistory.map((qa, idx) => (
+              <div key={idx} className="border rounded p-4 bg-white/70">
+                <div className="font-semibold text-primary mb-1">Q{idx + 1}: {qa.question}</div>
+                <div className="text-gray-900">{qa.answer}</div>
+              </div>
+            ))}
+          </div> 
+          {/* Show latest answer in card (for speech, etc) */}
+          {answerData && (
+            <AnswerDisplayCard
+              answerData={answerData}
+              isLoading={isLoading}
+              speechControl={speech}
+            />
+          )}
+          {/* Follow-up Questions Button: Only show after first answer for uploaded file */}
+          {currentFile && answerData && (
+            <button
+              className="w-full mt-2 py-2 px-4 rounded bg-secondary text-primary font-semibold border border-primary hover:bg-primary/10"
+              onClick={() => {
+                setQuestionInput("");
+                setAnswerData(null);
+              }}
+              aria-label="Ask Follow-up Question"
+            >
+              Ask Follow-up Question
+            </button>
+          )}
+          {/* New Question Button: Always visible if there is any Q&A history */}
+          {qaHistory.length > 0 && (
+            <button
+              className="w-full mt-2 py-2 px-4 rounded bg-blue-500 text-white font-semibold border border-blue-700 hover:bg-blue-600"
+              onClick={() => {
+                setConversations(prev => qaHistory.length > 0 ? [...prev, { id: `conv-${prev.length + 1}`, title: `Conversation ${prev.length + 1}`, history: qaHistory, collapsed: true }] : prev);
+                setQaHistory([]);
+                setQuestionInput("");
+                setAnswerData(null);
+              }}
+              aria-label="Start New Question"
+            >
+              New Question
+            </button>
+          )}
+          {/* Erase History Button: Always visible if there is any Q&A/conversation history */}
+          {(qaHistory.length > 0 || conversations.length > 0) && (
+            <button
+              className="w-full mt-2 py-2 px-4 rounded bg-red-500 text-white font-semibold border border-red-700 hover:bg-red-600"
+              onClick={() => {
+                setQaHistory([]);
+                setConversations([]);
+                setQuestionInput("");
+                setAnswerData(null);
+              }}
+              aria-label="Erase History"
+            >
+              Erase History
+            </button>
+          )}
+          {showEDAButton && edaResult && (
+            <AnswerDisplayCard
+              answerData={edaResult}
+              isLoading={isEDAloading}
+              speechControl={speech}
+            />
+          )}
+          {/* Modular EDA: Only show VisualizationCard after EDA is run and result is available */}
+          {showEDAButton && edaResult && currentFile && (
+            <VisualizationCard csvDataUri={currentFile.dataUri} />
+          )}
+        </section>
+      </main>
+      <footer className="text-center p-4 text-sm text-muted-foreground border-t border-border">
+        &copy; {new Date().getFullYear()} InsightFlow. All rights reserved.
+      </footer>
+    </div>
+  );
+}
+
+// Version 2.9.39: Remove unused language references and fix type errors
+export default function InsightFlowPage() {
+  const [questionInput, setQuestionInput] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [currentFile, setCurrentFile] = useState<FileState | null>(null);
+  const [answerData, setAnswerData] = useState<CombinedAnswerData | null>(null);
+  const [qaHistory, setQaHistory] = useState<QAHistoryItem[]>([]);
+  const [conversations, setConversations] = useLocalStorageConversations('conversations', [] as ConversationItem[]);
+  const [renamingIdx, setRenamingIdx] = useState<number | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+  const [language, setLanguage] = useState('en');
+  const { toast } = useToastManager();
+  const speech = useSpeech();
+
+  useEffect(() => {
+    if (speech.error) {
+      toast({ title: "Speech Error", description: speech.error, variant: "destructive" });
+    }
+  }, [speech.error, toast]);
+
+  useEffect(() => {
+    if (speech.transcript) {
+      setQuestionInput(speech.transcript);
+    }
+  }, [speech.transcript]);
+
+  const handleFileUpload = async (file: FileState | null) => {
+    setCurrentFile(file);
+    setAnswerData(null);
+    if (!file) {
+      toast({ title: "File removed", description: "The uploaded file has been cleared." });
+    }
+  };
+
+
+  const handleQuestionSubmit = async (input: string) => {
+    if (!input) return;
+
+    const question = input.trim();
+    if (!question) {
+      toast({ title: "Empty question", description: "Please enter a question.", variant: "destructive" });
+      return;
+    }
+
+    setQuestionInput(question);
+    setIsLoading(true);
+
+    try {
+      let finalAnswerData: CombinedAnswerData | null = null;
+
+      if (currentFile) {
+        const analysisResult = await analyzeUploadedContent({
+          question,
+          fileDataUri: currentFile.dataUri,
+          fileType: currentFile.type,
+          language,
+          requiresWebSearch: false,
+          requiresImageGeneration: false
+        } as AnalyzeUploadedContentInput);
+
+        if (analysisResult.requiresWebSearch) {
+          const webSearchResult = await answerWithWebSearch({
+            question,
+            fileContent: analysisResult.answer
+          });
+
+          finalAnswerData = webSearchResult;
+        } else if (analysisResult.requiresImageGeneration && analysisResult.imageGenerationPrompt) {
+          const imageResult = await generateImageFlow({
+            prompt: analysisResult.imageGenerationPrompt,
+            documentDataUri: currentFile.dataUri
+          });
+
+          finalAnswerData = {
+            ...analysisResult,
+            generatedImageUri: imageResult.imageDataUri
+          };
+        } else {
+          finalAnswerData = analysisResult;
+        }
+      }
+
+      setAnswerData(finalAnswerData);
+
+      if (finalAnswerData?.answer) {
+        const newQaItem: QAHistoryItem = { question, answer: finalAnswerData.answer };
+        setQaHistory(prev => [...prev, newQaItem]);
+      }
+
+      if (finalAnswerData?.answer && speech.supported) {
+        speech.speak(finalAnswerData.answer, language);
+      }
+
+    } catch (error) {
+      console.error("Error processing query:", error);
+      toast({ title: "Error", description: "Failed to process your question. Please try again.", variant: "destructive" });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+    if (!question.trim()) {
+      toast({ title: "Empty question", description: "Please enter a question.", variant: "destructive" });
+      return;
+    }
+    setIsLoading(true);
+    setAnswerData(null);
+    let finalAnswerData: CombinedAnswerData | null = null;
+
+    try {
+      // Detect question language (simple heuristic, can be improved)
+      const detectLanguage = (text: string) => {
+        // Simple check: Hindi Unicode range
+        return /[\u0900-\u097F]/.test(text) ? 'hi-IN' : 'en-US';
+      };
+      const questionLanguage = detectLanguage(question);
+      // Build context from all previous Q&A in current thread, with explicit system prompt for context resolution
+      const systemPrompt = `SYSTEM: You are an AI assistant. If the latest user question is a follow-up or uses pronouns or ambiguous references (like 'he', 'she', 'they', 'the person'), always resolve them using the latest relevant entity in the conversation history. Never ask the user to repeat the name. If the user requests a web search, use the most relevant previous question as the web search query. Use the full conversation history below to resolve context.`;
+      const contextQA = qaHistory.map((qa, idx) => `Q${idx+1}: ${qa.question}\nA${idx+1}: ${qa.answer}`).join('\n');
+      const fullContext = `${systemPrompt}\nConversation history:\n${contextQA}${qaHistory.length ? '\n' : ''}Q${qaHistory.length+1}: ${question}`;
+      if (currentFile) {
+        // Pass full context to backend/LLM
+        const analysisResult = await analyzeUploadedContent({
+          question,
+          fileDataUri: currentFile.dataUri,
+          fileType: currentFile.type,
+          language: 'en'
+        });
+        finalAnswerData = analysisResult;
+
+        // If backend signals web search is needed, trigger it automatically
+        if (analysisResult.requiresWebSearch) {
+          // Try to extract the last non-follow-up question for web search
+          const lastRelevant = [...qaHistory].reverse().find(qa => !/follow[- ]?up|search|internet|context|find out|look at/i.test(qa.question));
+          const webSearchQuery = lastRelevant ? lastRelevant.question : question;
+          // Use the extracted question for web search
+          finalAnswerData = await answerWithWebSearch({ question: webSearchQuery });
+        }
+
+        if (finalAnswerData && finalAnswerData.requiresImageGeneration && finalAnswerData.imageGenerationPrompt &&
+            (currentFile.type === 'application/pdf' || currentFile.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')) {
+          try {
+            toast({ title: "Generating Image", description: "Please wait while the AI creates a visual representation." });
+            const imageResult: GenerateImageOutput = await generateImageFlow({
+              documentDataUri: currentFile.dataUri,
+              prompt: finalAnswerData.imageGenerationPrompt,
+            });
+            if (imageResult.imageDataUri) {
+              finalAnswerData.generatedImageUri = imageResult.imageDataUri;
+            }
+          } catch (imageError) {
+            toast({ title: "Image Generation Error", description: "Failed to generate image." });
+          }
+        }
+      } else {
+        // No file: always use context for web search
+        // Try to extract the last non-follow-up question for web search
+        const lastRelevant = [...qaHistory].reverse().find(qa => !/follow[- ]?up|search|internet|context|find out|look at/i.test(qa.question));
+        const webSearchQuery = lastRelevant ? lastRelevant.question : question;
+        finalAnswerData = await answerWithWebSearch({ question: webSearchQuery });
+      }
+      
+      setAnswerData(finalAnswerData);
+
+      // Append to Q&A history
+      if (finalAnswerData?.answer && question) {
+        setQaHistory(prev => [...prev, { question, answer: finalAnswerData.answer }]);
+      }
+
+      if (finalAnswerData?.answer && speech.supported) {
+        speech.speak(finalAnswerData.answer, language);
+      }
+
+    } catch (error) {
+      console.error("Error processing query:", error);
+      const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
+      toast({
+        title: "AI Error",
+        description: `Failed to get an answer: ${errorMessage}`,
+        variant: "destructive",
+      });
+      const errorAnswer = { answer: `Sorry, I encountered an error: ${errorMessage}`, sources: [], requiresImageGeneration: false };
+      setAnswerData(errorAnswer);
+      if (speech.supported) {
+        speech.speak(errorAnswer.answer, questionLanguage || 'en-US');
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // EDA trigger state
+  const [isEDAloading, setEDAloading] = useState<boolean>(false);
+  const [edaResult, setEdaResult] = useState<CombinedAnswerData | null>(null);
+  const showEDAButton = currentFile && currentFile.type === 'text/csv';
+
+  // EDA handler for CSV only
+  const handleEDA = async () => {
+    if (!currentFile) return;
+    setEDAloading(true);
+    setEdaResult(null);
+    try {
+      const analysisResult = await analyzeUploadedContent({
+        fileDataUri: currentFile.dataUri,
+        question: 'Run EDA',
+        fileType: currentFile.type,
+      });
+      setEdaResult(analysisResult);
+      toast({ title: "EDA Complete", description: "Exploratory Data Analysis has completed for your CSV file." });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Unknown error during EDA.";
+      toast({ title: "EDA Error", description: errorMessage, variant: "destructive" });
+    } finally {
+      setEDAloading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen w-full bg-gradient-to-br from-blue-50 via-white to-indigo-50 font-sans">
+      <header className="w-full py-6 px-4 flex flex-col gap-1 items-start bg-white/80 dark:bg-gray-900 shadow-sm mb-6">
+        <div className="w-full flex flex-row items-center justify-between">
+          <span className="text-2xl font-extrabold text-blue-800 dark:text-blue-100 tracking-tight">InsightFlow</span>
+          <Suspense fallback={<div style={{width:40,height:32}} />}>
+            <DarkModeToggle />
+          </Suspense>
+        </div>
+        </div>
+      </header>
+      <main className="container py-6">
+        <section className="mx-auto w-full max-w-4xl space-y-4">
+          <FileUploadCard onFileUpload={handleFileUpload} />
+          <QueryInputCard
+            onSubmit={handleQuestionSubmit}
+            isLoading={isLoading}
+            currentFile={currentFile}
+          />
+          {/* Show EDA button for CSV files */}
+          {showEDAButton && (
+            <button
+              className="w-full py-2 px-4 rounded bg-secondary text-primary font-semibold border border-primary hover:bg-primary/10"
+              onClick={handleEDA}
+              disabled={isEDAloading}
+              aria-label="Perform Exploratory Data Analysis"
+            >
+              {isEDAloading ? "Analyzing..." : "Perform Exploratory Data Analysis"}
+            </button>
+          )}
+          {/* Previous conversations */}
+          {conversations.length > 0 && (
+            <div className="border rounded p-4 bg-white/70">
+              <h3 className="font-semibold mb-2">Previous Conversations</h3>
+              <div className="space-y-2">
+                {conversations.map((conv, cIdx) => (
+                  <div key={cIdx} className="border rounded p-2">
+                    <div className="flex justify-between items-center">
+                      <h4 className="font-medium">{conv.title}</h4>
+                      <div className="space-x-2">
+                        <button
+                          className="text-sm text-blue-600 hover:underline"
+                          onClick={() => {
+                            const updatedConversations = [...conversations];
+                            updatedConversations[cIdx].collapsed = !updatedConversations[cIdx].collapsed;
+                            setConversations(updatedConversations);
+                          }}
+                          aria-label={`Toggle conversation ${cIdx + 1}`}
+                        >
+                          {conv.collapsed ? "Expand" : "Collapse"}
+                        </button>
+                        <button
+                          className="text-sm text-blue-600 hover:underline"
+                          onClick={() => {
+                            setQaHistory(conv.history);
+                            setConversations(prev => prev.filter((_, idx) => idx !== cIdx));
+                          }}
+                          aria-label={`Revisit conversation ${cIdx + 1}`}
+                        >
+                          Continue
+                        </button>
+                      </div>
+                    </div>
+                    {!conv.collapsed && (
+                      <div>
+                        {conv.history.map((qa, idx) => (
+                          <div key={idx} className="mb-1">
+                            <span className="font-semibold text-primary">Q{idx + 1}:</span> {qa.question}
+                            <div className="ml-4 text-gray-900">{qa.answer}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {/* Modular Q&A thread: show all Q&A pairs */}
+          <div className="space-y-4">
+            {qaHistory.map((qa, idx) => (
+              <div key={idx} className="border rounded p-4 bg-white/70">
+                <div className="font-semibold text-primary mb-1">Q{idx + 1}: {qa.question}</div>
+                <div className="text-gray-900">{qa.answer}</div>
+              </div>
+            ))}
+          </div>
+          {/* Show latest answer in card (for speech, etc) */}
+          {answerData && (
+            <AnswerDisplayCard
+              answerData={answerData}
+              isLoading={isLoading}
+              speechControl={speech}
+            />
+          )}
+          {/* Follow-up Questions Button: Only show after first answer for uploaded file */}
+          {currentFile && answerData && (
+            <button
+              className="w-full mt-2 py-2 px-4 rounded bg-secondary text-primary font-semibold border border-primary hover:bg-primary/10"
+              onClick={() => {
+                setQuestionInput("");
+                setAnswerData(null);
+              }}
+              aria-label="Ask Follow-up Question"
+            >
+              Ask Follow-up Question
+            </button>
+          )}
+          {/* New Question Button: Always visible if there is any Q&A history */}
+          {qaHistory.length > 0 && (
+            <button
+              className="w-full mt-2 py-2 px-4 rounded bg-blue-500 text-white font-semibold border border-blue-700 hover:bg-blue-600"
+              onClick={() => {
+                setConversations(prev => qaHistory.length > 0 ? [...prev, { id: `conv-${prev.length + 1}`, title: `Conversation ${prev.length + 1}`, history: qaHistory, collapsed: true }] : prev);
+                setQaHistory([]);
+                setQuestionInput("");
+                setAnswerData(null);
+              }}
+              aria-label="Start New Question"
+            >
+              New Question
+            </button>
+          )}
+          {/* Erase History Button: Always visible if there is any Q&A/conversation history */}
+          {(qaHistory.length > 0 || conversations.length > 0) && (
+            <button
+              className="w-full mt-2 py-2 px-4 rounded bg-red-500 text-white font-semibold border border-red-700 hover:bg-red-600"
+              onClick={() => {
+                setQaHistory([]);
+                setConversations([]);
+                setQuestionInput("");
+                setAnswerData(null);
+              }}
+              aria-label="Erase History"
+            >
+              Erase History
+            </button>
+          )}
+          {showEDAButton && edaResult && (
+            <AnswerDisplayCard
+              answerData={edaResult}
+              isLoading={isEDAloading}
+              speechControl={speech}
+            />
+          )}
+          {/* Modular EDA: Only show VisualizationCard after EDA is run and result is available */}
+          {showEDAButton && edaResult && currentFile && (
+            <VisualizationCard csvDataUri={currentFile.dataUri} />
+          )}
+        </section>
+      </main>
+      <footer className="text-center p-4 text-sm text-muted-foreground border-t border-border">
+        &copy; {new Date().getFullYear()} InsightFlow. All rights reserved.
+      </footer>
+    </div>
+  );
+}

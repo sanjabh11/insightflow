@@ -105,38 +105,49 @@ export function useSpeech() {
     }
   }, [selectedLanguage, supported, processVoices]);
 
-  const speak = useCallback((text: string) => {
+  // Speak with language selection and chunking for long texts
+  const speak = useCallback((text: string, lang?: string) => {
     if (!supported || !text.trim() || !window.speechSynthesis) return;
-    
     if (isSpeaking || window.speechSynthesis.speaking) {
       window.speechSynthesis.cancel();
     }
-
-    const utterance = new SpeechSynthesisUtterance(text);
-    const voice = allVoices.find(v => v.voiceURI === selectedVoiceURI);
-
-    if (voice) {
-      utterance.voice = voice;
-      utterance.lang = voice.lang;
-    } else {
-      // Fallback: try to find any voice for the selected language prefix
-      const langPrefix = selectedLanguage.split('-')[0];
-      const fallbackVoiceForLang = allVoices.find(v => v.lang.startsWith(langPrefix));
-      if (fallbackVoiceForLang) {
-        utterance.voice = fallbackVoiceForLang;
-        utterance.lang = fallbackVoiceForLang.lang;
-      } else {
-         utterance.lang = selectedLanguage; // Ultimate fallback to selected language code
-      }
+    // Chunk text if too long (browser limits)
+    const maxChunkLength = 200;
+    const chunks: string[] = [];
+    let remaining = text;
+    while (remaining.length > 0) {
+      let chunk = remaining.slice(0, maxChunkLength);
+      // Try to split at sentence boundary
+      const lastPunct = chunk.lastIndexOf('. ');
+      if (lastPunct > 50) chunk = chunk.slice(0, lastPunct + 1);
+      chunks.push(chunk.trim());
+      remaining = remaining.slice(chunk.length).trim();
     }
-    
-    utterance.onstart = () => setIsSpeaking(true);
-    utterance.onend = () => setIsSpeaking(false);
-    utterance.onerror = (event) => {
-      setIsSpeaking(false);
-      setError({ error: 'Speech synthesis error', message: event.error });
+    let currentChunk = 0;
+    const speakChunk = () => {
+      if (currentChunk >= chunks.length) {
+        setIsSpeaking(false);
+        return;
+      }
+      const utterance = new SpeechSynthesisUtterance(chunks[currentChunk]);
+      utterance.lang = lang || selectedLanguage;
+      if (selectedVoiceURI) utterance.voice = allVoices.find(v => v.voiceURI === selectedVoiceURI) || null;
+      if (lang && allVoices.length > 0) {
+        const match = allVoices.find(v => v.lang === lang);
+        if (match) utterance.voice = match;
+      }
+      utterance.onend = () => {
+        currentChunk++;
+        speakChunk();
+      };
+      utterance.onerror = (event) => {
+        setIsSpeaking(false);
+        setError({ error: 'Speech synthesis error', message: event.error });
+      };
+      setIsSpeaking(true);
+      window.speechSynthesis.speak(utterance);
     };
-    window.speechSynthesis.speak(utterance);
+    speakChunk();
   }, [supported, allVoices, selectedVoiceURI, selectedLanguage, isSpeaking]);
 
   const cancelSpeaking = useCallback(() => {
@@ -230,3 +241,4 @@ export function useSpeech() {
     stopListening,
   };
 }
+export { useSpeech };

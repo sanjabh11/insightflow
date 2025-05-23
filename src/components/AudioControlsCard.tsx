@@ -46,18 +46,18 @@ export function AudioControlsCard({ speechControl }: AudioControlsCardProps) {
   const otherVoices = voices.filter(v => v.gender === undefined);
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Volume2 className="w-6 h-6 text-primary" />
+    <Card className="w-full max-w-xl mx-auto bg-white/90 shadow-lg rounded-2xl border-0">
+      <CardHeader className="px-6 pt-6 pb-2">
+        <CardTitle className="flex items-center gap-2 text-lg font-semibold text-indigo-800">
+          <Volume2 className="w-6 h-6 text-blue-500" />
           Audio Controls
         </CardTitle>
-        <CardDescription>Select language and voice for audio responses.</CardDescription>
+        <CardDescription className="text-neutral-500">Select language and voice for audio responses.</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-6 px-6 pb-6">
         <div className="space-y-2">
-          <Label htmlFor="language-select" className="flex items-center gap-1">
-            <Languages className="w-4 h-4" /> Language
+          <Label htmlFor="language-select" className="flex items-center gap-1 text-base font-medium text-blue-900">
+            <Languages className="w-4 h-4 text-blue-500" /> Language
           </Label>
           <Select
             value={selectedLanguage}

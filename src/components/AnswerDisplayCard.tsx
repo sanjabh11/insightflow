@@ -72,29 +72,29 @@ export function AnswerDisplayCard({ answerData, isLoading, speechControl }: Answ
   const isError = answerData.answer.toLowerCase().includes("error") || answerData.answer.toLowerCase().includes("sorry");
 
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
+    <Card className="w-full max-w-xl mx-auto bg-white/90 shadow-lg rounded-2xl border-0 p-0">
+      <CardHeader className="flex flex-row items-center justify-between px-6 pt-6 pb-2">
         <div className="flex items-center gap-2">
-          {isError ? <AlertCircle className="w-6 h-6 text-destructive" /> : <BrainCircuit className="w-6 h-6 text-primary" />}
-          <CardTitle>AI Response</CardTitle>
+          {isError ? <AlertCircle className="w-6 h-6 text-red-500" /> : <BrainCircuit className="w-6 h-6 text-indigo-600" />}
+          <CardTitle className="text-lg font-semibold text-blue-900">AI Response</CardTitle>
         </div>
         {speechSupported && answerData && answerData.answer && !isError && (
-          <Button variant="outline" size="icon" onClick={handleSpeak} aria-label={isSpeaking ? "Stop speaking" : "Speak answer"}>
-            {isSpeaking ? <VolumeX className="w-5 h-5 text-destructive" /> : <Volume2 className="w-5 h-5 text-primary" />}
+          <Button variant="outline" size="icon" onClick={handleSpeak} aria-label={isSpeaking ? "Stop speaking" : "Speak answer"} className="bg-white/80 hover:bg-blue-50 border-0 shadow-none">
+            {isSpeaking ? <VolumeX className="w-5 h-5 text-red-500" /> : <Volume2 className="w-5 h-5 text-indigo-600" />}
           </Button>
         )}
       </CardHeader>
-      <CardContent>
+      <CardContent className="px-6 pb-6">
         {isError ? (
-          <Alert variant="destructive">
+          <Alert variant="destructive" className="rounded-xl">
             <AlertCircle className="h-4 w-4" />
             <AlertTitle>Error</AlertTitle>
             <AlertDescription>{answerData.answer}</AlertDescription>
           </Alert>
         ) : (
           <div className="space-y-4">
-            <div className="prose dark:prose-invert max-w-none p-4 bg-secondary/30 rounded-md">
-              <p>{answerData.answer}</p>
+            <div className="rounded-xl bg-blue-50 text-blue-900 px-5 py-3 shadow-sm break-words font-sans text-base leading-relaxed">
+              <p className="whitespace-pre-line">{answerData.answer}</p>
             </div>
 
             {answerData.generatedImageUri && (
