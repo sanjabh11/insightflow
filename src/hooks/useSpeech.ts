@@ -241,4 +241,3 @@ export function useSpeech() {
     stopListening,
   };
 }
-export { useSpeech };

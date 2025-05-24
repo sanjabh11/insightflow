@@ -45,7 +45,10 @@ import { useToast } from "@/hooks/use-toast";
 import { useSpeech } from '@/hooks/useSpeech';
 
 // Combined type for answer data, including potential image URI
-type CombinedAnswerData = (AnalyzeUploadedContentOutput | AnswerWithWebSearchOutput) & { generatedImageUri?: string };
+type CombinedAnswerData = (AnalyzeUploadedContentOutput | AnswerWithWebSearchOutput) & { 
+  generatedImageUri?: string;
+  requiresWebSearch?: boolean; // Added for API compatibility
+};
 
 // Helper: Detect if the answer indicates the file/image is not relevant
 function shouldFallbackToWebSearch(answer: string): boolean {
@@ -123,6 +126,11 @@ export default function InsightFlowPage() {
     }
   };
 
+  /**
+   * Version 1.9: Modular API-based query handler
+   * This implementation uses the dedicated API route instead of direct function calls
+   * to properly separate client and server logic.
+   */
   const handleQuerySubmit = async () => {
     if (!question.trim()) {
       toast({ title: "Empty question", description: "Please enter a question.", variant: "destructive" });
@@ -139,70 +147,45 @@ export default function InsightFlowPage() {
     const questionLanguage = detectLanguage(question);
 
     try {
-      // Build context from all previous Q&A in current thread, with explicit system prompt for context resolution
-      const systemPrompt = `SYSTEM: You are an AI assistant. If the latest user question is a follow-up or uses pronouns or ambiguous references (like 'he', 'she', 'they', 'the person'), always resolve them using the latest relevant entity in the conversation history. Never ask the user to repeat the name. If the user requests a web search, use the most relevant previous question as the web search query. Use the full conversation history below to resolve context.`;
+      // Build context from all previous Q&A in current thread
       const contextQA = qaHistory.map((qa, idx) => `Q${idx+1}: ${qa.question}\nA${idx+1}: ${qa.answer}`).join('\n');
-      const fullContext = `${systemPrompt}\nConversation history:\n${contextQA}${qaHistory.length ? '\n' : ''}Q${qaHistory.length+1}: ${question}`;
-      if (currentFile) {
-        // Pass full context to backend/LLM
-        const analysisResult = await analyzeUploadedContent({
-          fileDataUri: currentFile.dataUri,
-          question: fullContext,
-          fileType: currentFile.type
+      const fullContext = `Conversation history:\n${contextQA}${qaHistory.length ? '\n' : ''}Q${qaHistory.length+1}: ${question}`;
+      
+      // Prepare request payload for the API
+      const requestData = {
+        question: fullContext || question,
+        fileDataUri: currentFile?.dataUri,
+        fileType: currentFile?.type,
+        requiresWebSearch: !currentFile // Auto web search if no file
+      };
+
+      // Call our new API endpoint
+      const response = await fetch('/api/ask', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestData),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Server error: ${response.status}`);
+      }
+
+      const apiResponse = await response.json();
+      
+      // Set intermediate loading message if web search is needed
+      if (apiResponse.requiresWebSearch) {
+        setAnswerData({ 
+          answer: "I could not find your query in this file so I will be searching internet now. Please stand by.", 
+          sources: [],
+          requiresWebSearch: true,
+          requiresImageGeneration: false 
         });
-        finalAnswerData = analysisResult;
-
-        // Always extract the answer for further checks
-        const extracted = extractAnswer(analysisResult);
-
-        // If backend signals web search is needed, trigger it automatically
-        if ('requiresWebSearch' in analysisResult && analysisResult.requiresWebSearch) {
-          setAnswerData({ answer: "I could not find your query in this file so I will be searching internet now. Please stand by.", sources: [] });
-          const lastRelevant = [...qaHistory].reverse().find(qa => !/follow[- ]?up|search|internet|context|find out|look at/i.test(qa.question));
-          const webSearchQuery = lastRelevant ? lastRelevant.question : question;
-          finalAnswerData = await answerWithWebSearch({ question: webSearchQuery });
-        } else if (
-          extracted.answer &&
-          (shouldFallbackToWebSearch(extracted.answer) || (Array.isArray(extracted.sources) && extracted.sources.some(s => /search|web search/i.test(s))))
-        ) {
-          setAnswerData({ answer: "I could not find your query in this file so I will be searching internet now. Please stand by.", sources: [] });
-          finalAnswerData = await answerWithWebSearch({ question });
-        } else {
-          // Use the extracted answer for display
-          setAnswerData(extracted);
-        }
-
-        // Type guard for requiresImageGeneration and imageGenerationPrompt
-        if (
-          finalAnswerData &&
-          typeof finalAnswerData === 'object' &&
-          'requiresImageGeneration' in finalAnswerData &&
-          (finalAnswerData as any).requiresImageGeneration &&
-          'imageGenerationPrompt' in finalAnswerData &&
-          (finalAnswerData as any).imageGenerationPrompt &&
-          (currentFile.type === 'application/pdf' || currentFile.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
-        ) {
-          try {
-            toast({ title: "Generating Image", description: "Please wait while the AI creates a visual representation." });
-            const imageResult: GenerateImageOutput = await generateImageFlow({
-              documentDataUri: currentFile.dataUri,
-              prompt: (finalAnswerData as any).imageGenerationPrompt,
-            });
-            if (imageResult.imageDataUri) {
-              (finalAnswerData as any).generatedImageUri = imageResult.imageDataUri;
-            }
-          } catch (imageError) {
-            toast({ title: "Image Generation Error", description: "Failed to generate image." });
-          }
-        }
-      } else {
-        // No file: always use context for web search
-        // Try to extract the last non-follow-up question for web search
-        const lastRelevant = [...qaHistory].reverse().find(qa => !/follow[- ]?up|search|internet|context|find out|look at/i.test(qa.question));
-        const webSearchQuery = lastRelevant ? lastRelevant.question : question;
-        finalAnswerData = await answerWithWebSearch({ question: webSearchQuery });
       }
       
+      finalAnswerData = apiResponse;
       setAnswerData(finalAnswerData);
 
       // Append to Q&A history
@@ -211,8 +194,8 @@ export default function InsightFlowPage() {
         setQaHistory(prev => [...prev, { question, answer: extractedQA.answer ?? "" }]);
       }
 
+      // Handle speech synthesis if available
       if (finalAnswerData && finalAnswerData.answer && speech.supported) {
-        // Use answer language if available, else fallback to question language
         const answerLang = (questionLanguage || 'en-US');
         speech.speak(finalAnswerData.answer, answerLang);
       }
@@ -225,7 +208,12 @@ export default function InsightFlowPage() {
         description: `Failed to get an answer: ${errorMessage}`,
         variant: "destructive",
       });
-      const errorAnswer = { answer: `Sorry, I encountered an error: ${errorMessage}`, sources: [], requiresImageGeneration: false };
+      const errorAnswer = { 
+        answer: `Sorry, I encountered an error: ${errorMessage}`, 
+        sources: [], 
+        requiresWebSearch: false,
+        requiresImageGeneration: false 
+      };
       setAnswerData(errorAnswer);
       if (speech.supported) {
         speech.speak(errorAnswer.answer, questionLanguage || 'en-US');
@@ -240,17 +228,35 @@ export default function InsightFlowPage() {
   const [edaResult, setEdaResult] = useState<CombinedAnswerData | null>(null);
   const showEDAButton = currentFile && currentFile.type === 'text/csv';
 
-  // EDA handler for CSV only
+  /**
+   * Version 1.9: Modular API-based EDA handler
+   * Uses the same API endpoint with a special EDA question
+   */
   const handleEDA = async () => {
     if (!currentFile) return;
     setEDAloading(true);
     setEdaResult(null);
     try {
-      const analysisResult = await analyzeUploadedContent({
-        fileDataUri: currentFile.dataUri,
-        question: 'Run EDA',
-        fileType: currentFile.type,
+      // Call our API endpoint with EDA request
+      const response = await fetch('/api/ask', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          question: 'Run EDA on this file and provide a comprehensive analysis',
+          fileDataUri: currentFile.dataUri,
+          fileType: currentFile.type,
+          requiresWebSearch: false
+        }),
       });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Server error: ${response.status}`);
+      }
+
+      const analysisResult = await response.json();
       setEdaResult(analysisResult);
       toast({ title: "EDA Complete", description: "Exploratory Data Analysis has completed for your CSV file." });
     } catch (error) {
