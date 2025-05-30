@@ -268,7 +268,7 @@ export default function InsightFlowPage() {
   };
 
   return (
-    <div className="min-h-screen w-full bg-gradient-to-br from-blue-50 via-white to-indigo-50 font-sans">
+    <div className="min-h-screen w-full bg-gradient-to-br from-blue-50 via-white to-indigo-50 dark:from-blue-900/50 dark:via-gray-900 dark:to-indigo-900/50 font-sans">
       <header className="w-full py-6 px-4 flex flex-col gap-1 items-start bg-white/80 dark:bg-gray-900 shadow-sm mb-6">
   <div className="w-full flex flex-row items-center justify-between">
     <span className="text-2xl font-extrabold text-blue-800 dark:text-blue-100 tracking-tight">InsightFlow</span>
@@ -294,9 +294,9 @@ export default function InsightFlowPage() {
           {/* Q&A thread: show all Q&A pairs */}
           <div className="space-y-4">
             {qaHistory.map((qa, idx) => (
-              <div key={idx} className="border rounded p-4 bg-white/70">
-                <div className="font-semibold text-primary mb-1">Q{idx + 1}: {qa.question}</div>
-                <div className="text-gray-900">{qa.answer}</div>
+              <div key={idx} className="border dark:border-gray-700 rounded p-4 bg-white/70 dark:bg-gray-800/70">
+                <div className="font-semibold text-primary dark:text-primary-dark mb-1">Q{idx + 1}: {qa.question}</div>
+                <div className="text-gray-900 dark:text-gray-200">{qa.answer}</div>
               </div>
             ))}
           </div>
@@ -311,7 +311,7 @@ export default function InsightFlowPage() {
           {/* EDA Button for CSVs only - always visible in middle panel when applicable */}
           {showEDAButton && !edaResult && (
             <button
-              className={`w-full mt-2 py-2 px-4 rounded bg-primary text-white font-semibold ${isEDAloading ? 'opacity-60 cursor-not-allowed' : 'hover:bg-primary/80'}`}
+              className={`w-full mt-2 py-2 px-4 rounded bg-primary dark:bg-primary-dark text-white font-semibold ${isEDAloading ? 'opacity-60 cursor-not-allowed' : 'hover:bg-primary/80 dark:hover:bg-primary-dark/80'}`}
               onClick={handleEDA}
               disabled={isEDAloading || isLoading}
               aria-label="Run EDA"
@@ -326,7 +326,7 @@ export default function InsightFlowPage() {
           {/* Follow-up Questions Button: Only show after first answer for uploaded file */}
           {currentFile && answerData && (
             <button
-              className="w-full mt-2 py-2 px-4 rounded bg-secondary text-primary font-semibold border border-primary hover:bg-primary/10"
+              className="w-full mt-2 py-2 px-4 rounded bg-secondary dark:bg-secondary-dark text-primary dark:text-primary-dark font-semibold border border-primary dark:border-primary-dark hover:bg-primary/10 dark:hover:bg-primary-dark/10"
               onClick={() => {
                 setQuestion("");
                 setAnswerData(null);
@@ -343,9 +343,9 @@ export default function InsightFlowPage() {
           {conversations.length > 0 && (
             <div className="mb-4">
               <div className="flex items-center justify-between mb-2">
-                <div className="font-bold text-md text-primary">Previous Conversations</div>
+                <div className="font-bold text-md text-primary dark:text-primary-dark">Previous Conversations</div>
                 <button
-                  className="py-1 px-3 rounded bg-green-600 text-white text-xs font-semibold border border-green-800 hover:bg-green-700"
+                  className="py-1 px-3 rounded bg-green-600 dark:bg-green-700 text-white text-xs font-semibold border border-green-800 dark:border-green-900 hover:bg-green-700 dark:hover:bg-green-600"
                   onClick={() => {
                     // Export all conversations and current thread (if any)
                     const exportData = [
@@ -371,14 +371,14 @@ export default function InsightFlowPage() {
                 {conversations.map((conv, cIdx) => (
                   <div
                     key={cIdx}
-                    className="border rounded p-2 bg-gray-50 transition relative"
-                    aria-label="Run EDA"
+                    className="border dark:border-gray-700 rounded p-2 bg-gray-50 dark:bg-gray-800 transition relative"
+                    aria-label="Run EDA" // This aria-label seems incorrect for a conversation item
                   >
                     {/* Collapse/expand and rename controls */}
                     <div className="flex items-center justify-between mb-1">
                       {renamingIdx === cIdx ? (
                         <input
-                          className="border px-2 py-1 rounded text-primary font-semibold w-2/3"
+                          className="border dark:border-gray-600 px-2 py-1 rounded text-primary dark:text-gray-100 bg-white dark:bg-gray-700 font-semibold w-2/3"
                           value={renameValue}
                           autoFocus
                           onChange={e => setRenameValue(e.target.value)}
@@ -394,18 +394,18 @@ export default function InsightFlowPage() {
                           }}
                         />
                       ) : (
-                        <span className="font-semibold text-primary cursor-pointer" title="Click to rename" onClick={() => { setRenamingIdx(cIdx); setRenameValue(conv.title); }}>{conv.title}</span>
+                        <span className="font-semibold text-primary dark:text-primary-dark cursor-pointer" title="Click to rename" onClick={() => { setRenamingIdx(cIdx); setRenameValue(conv.title); }}>{conv.title}</span>
                       )}
                       <div className="flex items-center gap-2">
                         <button
-                          className="text-xs text-blue-700 hover:underline"
+                          className="text-xs text-blue-700 dark:text-blue-400 hover:underline"
                           onClick={() => setConversations(prev => prev.map((c, idx) => idx === cIdx ? { ...c, collapsed: !c.collapsed } : c))}
                           aria-label={conv.collapsed ? 'Expand thread' : 'Collapse thread'}
                         >
                           {conv.collapsed ? 'Expand' : 'Collapse'}
                         </button>
                         <button
-                          className="text-xs text-green-700 hover:underline"
+                          className="text-xs text-green-700 dark:text-green-400 hover:underline"
                           title="Click to revisit and continue this conversation"
                           onClick={() => {
                             setQaHistory(conv.conversation);
@@ -423,8 +423,8 @@ export default function InsightFlowPage() {
                       <div>
                         {conv.conversation.map((qa, idx) => (
                           <div key={idx} className="mb-1">
-                            <span className="font-semibold text-primary">Q{idx + 1}:</span> {qa.question}
-                            <div className="ml-4 text-gray-900">{qa.answer}</div>
+                            <span className="font-semibold text-primary dark:text-primary-dark">Q{idx + 1}:</span> <span className="text-gray-800 dark:text-gray-300">{qa.question}</span>
+                            <div className="ml-4 text-gray-900 dark:text-gray-200">{qa.answer}</div>
                           </div>
                         ))}
                       </div>
@@ -437,7 +437,7 @@ export default function InsightFlowPage() {
           {/* New Question Button: Always visible if there is any Q&A history */}
           {qaHistory.length > 0 && (
             <button
-              className="w-full mt-2 py-2 px-4 rounded bg-blue-500 text-white font-semibold border border-blue-700 hover:bg-blue-600"
+              className="w-full mt-2 py-2 px-4 rounded bg-blue-500 dark:bg-blue-600 text-white font-semibold border border-blue-700 dark:border-blue-800 hover:bg-blue-600 dark:hover:bg-blue-500"
               onClick={() => {
                 setConversations(prev => qaHistory.length > 0 ? [...prev, { title: `Conversation ${prev.length + 1}`, conversation: qaHistory, collapsed: true }] : prev);
                 setQaHistory([]);
@@ -453,7 +453,7 @@ export default function InsightFlowPage() {
           {/* Erase History Button: Always visible if there is any Q&A/conversation history */}
           {(qaHistory.length > 0 || conversations.length > 0) && (
             <button
-              className="w-full mt-2 py-2 px-4 rounded bg-red-500 text-white font-semibold border border-red-700 hover:bg-red-600"
+              className="w-full mt-2 py-2 px-4 rounded bg-red-500 dark:bg-red-600 text-white font-semibold border border-red-700 dark:border-red-800 hover:bg-red-600 dark:hover:bg-red-500"
               onClick={() => {
                 setQaHistory([]);
                 setConversations([]);
