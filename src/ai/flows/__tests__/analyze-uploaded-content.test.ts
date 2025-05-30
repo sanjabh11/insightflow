@@ -1,12 +1,11 @@
 import { analyzeUploadedContent, AnalyzeUploadedContentInput, AnalyzeUploadedContentOutput } from '../analyze-uploaded-content';
 
 // Import mocks from the __mocks__ directory
-import { mockTextDetection } from '../__mocks__/@google-cloud/vision';
+import { mockTextDetection, mockDocumentTextDetection } from '../__mocks__/@google-cloud/vision';
 import { mockXLSXRead, mockSheetToTxt } from '../__mocks__/xlsx';
 import { mockJSZipLoadAsync } from '../__mocks__/jszip'; 
+import mockPdfParseDefault from '../__mocks__/pdf-parse'; 
 
-
-// Mock the Genkit internals
 const mockInternalPromptFunction = jest.fn();
 jest.mock('@/ai/genkit', () => {
   return {
@@ -34,11 +33,13 @@ jest.mock('@/ai/genkit', () => {
 
 describe('analyzeUploadedContent Flow Logic', () => {
   beforeEach(() => {
-    mockTextDetection.mockReset(); // Use mockReset for more thorough cleaning
-    mockInternalPromptFunction.mockReset(); // Use mockReset
-    mockXLSXRead.mockReset(); // Use mockReset
-    mockSheetToTxt.mockReset(); // Use mockReset
-    mockJSZipLoadAsync.mockReset(); // Use mockReset
+    mockTextDetection.mockReset();
+    mockDocumentTextDetection.mockReset(); 
+    mockInternalPromptFunction.mockReset(); 
+    mockXLSXRead.mockReset(); 
+    mockSheetToTxt.mockReset(); 
+    mockJSZipLoadAsync.mockReset();
+    mockPdfParseDefault.mockReset(); 
   });
 
   const pngDataUri = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
@@ -49,6 +50,11 @@ describe('analyzeUploadedContent Flow Logic', () => {
   const pdfDataUri = 'data:application/pdf;base64,JVBERi0xLjQKJdead6K9CjEgMCBvYmoKPDwvVHlwZSAvQ2F0YWxvZwovUGFnZXMgMiAwIFI+PgplbmRvYmoKMiAwIG9iago8PC9UeXBlIC9QYWdlcwovQ291bnQgMQovS2lkcyBbMyAwIFJdPj4KZW5kb2JqCjMgMCBvYmoKPDwvVHlwZSAvUGFnZQovUGFyZW50IDIgMCBSCi9NZWRpYUJveCBbMCAwIDU5NSA4NDJdCi9SZXNvdXJjZXMgPDwvRm9udCA8PC9GMSA8PC9UeXBlIC9Gb250Ci9TdWJ0eXBlIC9UeXBlMQovQmFzZUZvbnQgL0hlbHZldGljYT4+Pj4+Ci9Db250ZW50cyA0IDAgUj4+CmVuZG9iago0IDAgb2JqCjw8L0xlbmd0aCA0ND4+CnN0cmVhbQpCVCAvRjEgMTIgVGYgNzIgNzkyIFRkIChIZWxsbyBQREYpIFRqIEVUCmVuZHN0cmVhbQplbmRvYmoKeHJlZgowIDUKMDAwMDAwMDAwMCA2NTUzNSBmIAowMDAwMDAwMDE1IDAwMDAwIG4gCjAwMDAwMDAwNzkgMDAwMDAIG4gCjAwMDAwMDAxNTIgMDAwMDAIG4gCjAwMDAwMDAzMTggMDAwMDAIG4gCnRyYWlsZXIKPDwvU2l6ZSA1Ci9Sb290IDEgMCBSPj4Kc3RhcnR4cmVmCjM2NQolJUVPRgo=';
   const malformedDataUri = 'data:image/png;base64'; 
   const invalidBase64DataUri = 'data:image/png;base64,thisIsNotValidBase64!';
+
+  // PDF Test Data - moved to accessible scope
+  const pdfTextShort = "Short PDF text.";
+  const pdfTextLong = "This is a longer PDF text that should be considered sufficient for direct extraction, so OCR fallback should not be triggered in this particular scenario.".repeat(2);
+  const pdfOcrText = "Text extracted from PDF via OCR.";
 
   describe('Image OCR Processing', () => {
     it('should call prompt with ocrText for successful OCR (PNG)', async () => {
@@ -151,10 +157,10 @@ describe('analyzeUploadedContent Flow Logic', () => {
     });
     
     it('should handle empty ZIP file listing', async () => {
-      const localForEachMockEmpty = jest.fn(); 
+      const localEmptyForEachMock = jest.fn(); 
       mockJSZipLoadAsync.mockResolvedValueOnce({
         files: {}, 
-        forEach: localForEachMockEmpty,
+        forEach: localEmptyForEachMock,
       });
       
       await analyzeUploadedContent({ fileDataUri: emptyZipDataUri, question: 'What is in this?', fileType: 'application/zip' });
@@ -162,7 +168,7 @@ describe('analyzeUploadedContent Flow Logic', () => {
         processedFileText: 'ZIP file is empty or contains no listable files.',
         fileDataUri: emptyZipDataUri, 
       }));
-       expect(localForEachMockEmpty).toHaveBeenCalledTimes(1); 
+       expect(localEmptyForEachMock).toHaveBeenCalledTimes(1); 
     });
 
     it('should handle ZIP parsing failure', async () => {
@@ -175,6 +181,113 @@ describe('analyzeUploadedContent Flow Logic', () => {
     });
   });
 
+  // PDF Processing Tests
+  describe('PDF Processing', () => {
+    it('PDF Direct Text Extraction Success (Sufficient Text)', async () => {
+      mockPdfParseDefault.mockResolvedValueOnce({ text: pdfTextLong, numpages: 1, numrender: 1, info: {}, metadata: {}, version: '1.10.100' });
+      await analyzeUploadedContent({ fileDataUri: pdfDataUri, question: 'Test', fileType: 'application/pdf' });
+
+      expect(mockPdfParseDefault).toHaveBeenCalledTimes(1);
+      expect(mockDocumentTextDetection).not.toHaveBeenCalled();
+      expect(mockInternalPromptFunction).toHaveBeenCalledWith(expect.objectContaining({
+        processedFileText: pdfTextLong,
+        fileDataUri: undefined,
+        ocrText: null,
+      }));
+    });
+
+    it('PDF Direct Text Extraction (Insufficient Text) -> OCR Success', async () => {
+      mockPdfParseDefault.mockResolvedValueOnce({ text: pdfTextShort, numpages: 1, numrender: 1, info: {}, metadata: {}, version: '1.10.100' });
+      mockDocumentTextDetection.mockResolvedValueOnce([{ fullTextAnnotation: { text: pdfOcrText } }]);
+      
+      await analyzeUploadedContent({ fileDataUri: pdfDataUri, question: 'Test', fileType: 'application/pdf' });
+
+      expect(mockPdfParseDefault).toHaveBeenCalledTimes(1);
+      expect(mockDocumentTextDetection).toHaveBeenCalledTimes(1);
+      expect(mockInternalPromptFunction).toHaveBeenCalledWith(expect.objectContaining({
+        processedFileText: pdfOcrText,
+        fileDataUri: undefined,
+        ocrText: null,
+      }));
+    });
+
+    it('PDF Direct Text Extraction (Insufficient Text) -> OCR No Text Found', async () => {
+      mockPdfParseDefault.mockResolvedValueOnce({ text: pdfTextShort, numpages: 1, numrender: 1, info: {}, metadata: {}, version: '1.10.100' });
+      mockDocumentTextDetection.mockResolvedValueOnce([{ fullTextAnnotation: null }]); 
+
+      await analyzeUploadedContent({ fileDataUri: pdfDataUri, question: 'Test', fileType: 'application/pdf' });
+      
+      expect(mockPdfParseDefault).toHaveBeenCalledTimes(1);
+      expect(mockDocumentTextDetection).toHaveBeenCalledTimes(1);
+      expect(mockInternalPromptFunction).toHaveBeenCalledWith(expect.objectContaining({
+        processedFileText: "Short PDF text.", // SUT retains short text if OCR finds nothing new
+        fileDataUri: pdfDataUri, 
+        ocrText: null,
+      }));
+    });
+    
+    it('PDF Direct Text Extraction (Insufficient Text) -> OCR Failure', async () => {
+      mockPdfParseDefault.mockResolvedValueOnce({ text: pdfTextShort, numpages: 1, numrender: 1, info: {}, metadata: {}, version: '1.10.100' });
+      mockDocumentTextDetection.mockRejectedValueOnce(new Error('PDF OCR Vision Error'));
+
+      await analyzeUploadedContent({ fileDataUri: pdfDataUri, question: 'Test', fileType: 'application/pdf' });
+
+      expect(mockPdfParseDefault).toHaveBeenCalledTimes(1);
+      expect(mockDocumentTextDetection).toHaveBeenCalledTimes(1);
+      expect(mockInternalPromptFunction).toHaveBeenCalledWith(expect.objectContaining({
+        processedFileText: "Short PDF text. (OCR also attempted and failed: PDF OCR Vision Error)",
+        fileDataUri: pdfDataUri, 
+        ocrText: null,
+      }));
+    });
+
+    it('PDF Direct Text Extraction Failure -> OCR Success', async () => {
+      mockPdfParseDefault.mockRejectedValueOnce(new Error('pdf-parse failed'));
+      mockDocumentTextDetection.mockResolvedValueOnce([{ fullTextAnnotation: { text: pdfOcrText } }]);
+
+      await analyzeUploadedContent({ fileDataUri: pdfDataUri, question: 'Test', fileType: 'application/pdf' });
+      
+      expect(mockPdfParseDefault).toHaveBeenCalledTimes(1);
+      expect(mockDocumentTextDetection).toHaveBeenCalledTimes(1);
+      expect(mockInternalPromptFunction).toHaveBeenCalledWith(expect.objectContaining({
+        processedFileText: pdfOcrText,
+        fileDataUri: undefined,
+        ocrText: null,
+      }));
+    });
+
+    it('PDF Direct Text Extraction Failure -> OCR Failure', async () => {
+      mockPdfParseDefault.mockRejectedValueOnce(new Error('pdf-parse failed'));
+      mockDocumentTextDetection.mockRejectedValueOnce(new Error('PDF OCR Vision Error'));
+
+      await analyzeUploadedContent({ fileDataUri: pdfDataUri, question: 'Test', fileType: 'application/pdf' });
+
+      expect(mockPdfParseDefault).toHaveBeenCalledTimes(1);
+      expect(mockDocumentTextDetection).toHaveBeenCalledTimes(1);
+      expect(mockInternalPromptFunction).toHaveBeenCalledWith(expect.objectContaining({
+        processedFileText: 'PDF OCR processing failed: PDF OCR Vision Error',
+        fileDataUri: pdfDataUri, 
+        ocrText: null,
+      }));
+    });
+    
+    it('PDF Direct Text Extraction Failure -> OCR No Text Found', async () => {
+        mockPdfParseDefault.mockRejectedValueOnce(new Error('pdf-parse failed'));
+        mockDocumentTextDetection.mockResolvedValueOnce([{ fullTextAnnotation: null }]);
+  
+        await analyzeUploadedContent({ fileDataUri: pdfDataUri, question: 'Test', fileType: 'application/pdf' });
+  
+        expect(mockPdfParseDefault).toHaveBeenCalledTimes(1);
+        expect(mockDocumentTextDetection).toHaveBeenCalledTimes(1);
+        expect(mockInternalPromptFunction).toHaveBeenCalledWith(expect.objectContaining({
+          processedFileText: "No text found in PDF by OCR (after attempting direct parse and OCR).",
+          fileDataUri: pdfDataUri, 
+          ocrText: null,
+        }));
+      });
+  });
+
+
   describe('Passthrough File Types (TXT, PDF)', () => {
     it('should call prompt with fileDataUri for TXT files', async () => {
       await analyzeUploadedContent({ fileDataUri: txtDataUri, question: 'Test question', fileType: 'text/plain' });
@@ -182,10 +295,16 @@ describe('analyzeUploadedContent Flow Logic', () => {
         fileDataUri: txtDataUri, ocrText: null, processedFileText: null, fileType: 'text/plain',
       }));
     });
-    it('should call prompt with fileDataUri for PDF files (non-OCR path)', async () => {
+    it('should call prompt with fileDataUri for PDF files if all internal processing fails', async () => {
+      mockPdfParseDefault.mockImplementation(() => { throw new Error("pdf-parse error for passthrough test");});
+      mockDocumentTextDetection.mockImplementation(() => { throw new Error("vision API error for passthrough test");});
+
       await analyzeUploadedContent({ fileDataUri: pdfDataUri, question: 'Test question', fileType: 'application/pdf' });
       expect(mockInternalPromptFunction).toHaveBeenCalledWith(expect.objectContaining({
-        fileDataUri: pdfDataUri, ocrText: null, processedFileText: null, fileType: 'application/pdf',
+        fileDataUri: pdfDataUri, 
+        ocrText: null,
+        processedFileText: expect.stringContaining("PDF OCR processing failed: vision API error for passthrough test"), 
+        fileType: 'application/pdf',
       }));
     });
   });
@@ -239,10 +358,33 @@ describe('analyzeUploadedContent Flow Logic', () => {
       }));
     });
 
-    it('should use fileDataUri via media helper for PDF if no other processing applies', async () => {
-      await analyzeUploadedContent({ fileDataUri: pdfDataUri, question: 'Test PDF passthrough', fileType: 'application/pdf' });
+    it('should prioritize processedFileText for PDF (from direct parse)', async () => {
+        mockPdfParseDefault.mockResolvedValueOnce({text: pdfTextLong, numpages:1, numrender:1, info:{}, metadata:{}, version:'test'});
+        await analyzeUploadedContent({ fileDataUri: pdfDataUri, question: 'Test PDF priority', fileType: 'application/pdf' });
+        expect(mockInternalPromptFunction).toHaveBeenCalledWith(expect.objectContaining({
+            ocrText: null,
+            processedFileText: pdfTextLong,
+            fileDataUri: undefined,
+        }));
+    });
+
+    it('should prioritize processedFileText for PDF (from OCR if direct fails)', async () => {
+        mockPdfParseDefault.mockResolvedValueOnce({text: pdfTextShort, numpages:1, numrender:1, info:{}, metadata:{}, version:'test'}); 
+        mockDocumentTextDetection.mockResolvedValueOnce([{ fullTextAnnotation: { text: pdfOcrText } }]);
+        await analyzeUploadedContent({ fileDataUri: pdfDataUri, question: 'Test PDF priority', fileType: 'application/pdf' });
+        expect(mockInternalPromptFunction).toHaveBeenCalledWith(expect.objectContaining({
+            ocrText: null,
+            processedFileText: pdfOcrText,
+            fileDataUri: undefined,
+        }));
+    });
+
+
+    it('should use fileDataUri via media helper for DOCX if no other processing applies', async () => {
+       const docxDataUri = 'data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,dGhpcyBpcyBhIGRvY3ggZmlsZQ=='; 
+      await analyzeUploadedContent({ fileDataUri: docxDataUri, question: 'Test DOCX passthrough', fileType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
       expect(mockInternalPromptFunction).toHaveBeenCalledWith(expect.objectContaining({
-        ocrText: null, processedFileText: null, fileDataUri: pdfDataUri,
+        ocrText: null, processedFileText: null, fileDataUri: docxDataUri,
       }));
     });
 
