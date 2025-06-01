@@ -75,7 +75,7 @@ function extractAnswer(raw: any): { answer: string, sources: string[] } {
 }
 
 export default function InsightFlowPage() {
-  const [currentFile, setCurrentFile] = useState<{ name: string; type: string; dataUri: string } | null>(null);
+  const [currentFile, setCurrentFile] = useState<{ name: string; type: string; dataUri: string; preview?: string } | null>(null);
   const [question, setQuestion] = useState<string>("");
   const [answerData, setAnswerData] = useState<CombinedAnswerData | null>(null);
   // Modular Q&A thread: persistent history
@@ -145,8 +145,20 @@ export default function InsightFlowPage() {
       const fullContext = `${systemPrompt}\nConversation history:\n${contextQA}${qaHistory.length ? '\n' : ''}Q${qaHistory.length+1}: ${question}`;
       if (currentFile) {
         // Pass full context to backend/LLM
+        const getFileContentForAnalysis = (file: typeof currentFile) => {
+          if (!file) return '';
+          if (
+            file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+            file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+            file.type === 'application/zip' ||
+            file.type === 'text/plain'
+          ) {
+            return file.preview || '';
+          }
+          return file.dataUri;
+        };
         const analysisResult = await analyzeUploadedContent({
-          fileDataUri: currentFile.dataUri,
+          fileDataUri: getFileContentForAnalysis(currentFile),
           question: fullContext,
           fileType: currentFile.type
         });
@@ -246,8 +258,17 @@ export default function InsightFlowPage() {
     setEDAloading(true);
     setEdaResult(null);
     try {
+      const getFileContentForAnalysis = (file: typeof currentFile) => {
+        if (!file) return '';
+        if (
+          file.type === 'text/csv' && file.preview
+        ) {
+          return file.preview;
+        }
+        return file.dataUri;
+      };
       const analysisResult = await analyzeUploadedContent({
-        fileDataUri: currentFile.dataUri,
+        fileDataUri: getFileContentForAnalysis(currentFile),
         question: 'Run EDA',
         fileType: currentFile.type,
       });

@@ -3,6 +3,9 @@
 import type { ChangeEvent } from 'react';
 import { useState } from 'react';
 import Papa from 'papaparse';
+import * as XLSX from 'xlsx';
+import mammoth from 'mammoth';
+import JSZip from 'jszip';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -96,6 +99,59 @@ export function FileUploadCard({ onFileChange, currentFile }: FileUploadCardProp
     return images.filter(Boolean);
   };
 
+  // Modular v1.5: Utilities for extracting text from XLSX, DOCX, TXT, ZIP
+  const extractTextFromXLSX = async (file: File): Promise<string> => {
+    const data = await file.arrayBuffer();
+    const workbook = XLSX.read(data, { type: 'array' });
+    let text = '';
+    workbook.SheetNames.forEach(sheetName => {
+      const sheet = workbook.Sheets[sheetName];
+      const csv = XLSX.utils.sheet_to_csv(sheet);
+      text += `Sheet: ${sheetName}\n${csv}\n`;
+    });
+    return text.slice(0, 5000); // Limit preview/LLM input
+  };
+
+  const extractTextFromDOCX = async (file: File): Promise<string> => {
+    const arrayBuffer = await file.arrayBuffer();
+    const { value } = await mammoth.extractRawText({ arrayBuffer });
+    return value.slice(0, 5000); // Limit preview/LLM input
+  };
+
+  const extractTextFromTXT = async (file: File): Promise<string> => {
+    const text = await file.text();
+    return text.slice(0, 5000);
+  };
+
+  const extractTextFromZIP = async (file: File): Promise<string> => {
+    const zip = await JSZip.loadAsync(file);
+    let aggregated = '';
+    for (const filename of Object.keys(zip.files)) {
+      const entry = zip.files[filename];
+      if (!entry.dir) {
+        if (filename.endsWith('.txt')) {
+          const txt = await entry.async('string');
+          aggregated += `File: ${filename}\n${txt}\n`;
+        } else if (filename.endsWith('.docx')) {
+          const docxBlob = await entry.async('blob');
+          const arrayBuffer = await docxBlob.arrayBuffer();
+          const { value } = await mammoth.extractRawText({ arrayBuffer });
+          aggregated += `File: ${filename}\n${value}\n`;
+        } else if (filename.endsWith('.xlsx')) {
+          const xlsxBlob = await entry.async('blob');
+          const data = await xlsxBlob.arrayBuffer();
+          const workbook = XLSX.read(data, { type: 'array' });
+          workbook.SheetNames.forEach(sheetName => {
+            const sheet = workbook.Sheets[sheetName];
+            const csv = XLSX.utils.sheet_to_csv(sheet);
+            aggregated += `File: ${filename} (Sheet: ${sheetName})\n${csv}\n`;
+          });
+        }
+      }
+    }
+    return aggregated.slice(0, 5000);
+  };
+
   const handleFileSelect = async (file: File | null) => {
     setExtractedImages([]); // Reset gallery for new file
 
@@ -141,13 +197,29 @@ export function FileUploadCard({ onFileChange, currentFile }: FileUploadCardProp
                 return;
               }
             }
-            const preview = await generatePreview(file, e.target.result as string);
+            let preview = '';
             let extractedText = '';
-
-            if ((file.type.startsWith('image/') || file.type === 'application/pdf') && preview) {
-              extractedText = await processImageWithOCR(e.target.result as string);
+            // Modular v1.5: Handle file type for preview and Gemini
+            if (file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') {
+              extractedText = await extractTextFromXLSX(file);
+              preview = extractedText.slice(0, 1000);
+            } else if (file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+              extractedText = await extractTextFromDOCX(file);
+              preview = extractedText.slice(0, 1000);
+            } else if (file.type === 'text/plain') {
+              extractedText = await extractTextFromTXT(file);
+              preview = extractedText.slice(0, 1000);
+            } else if (file.type === 'application/zip') {
+              extractedText = await extractTextFromZIP(file);
+              preview = extractedText.slice(0, 1000);
+            } else if (file.type.startsWith('image/') || file.type === 'application/pdf') {
+              preview = await generatePreview(file, e.target.result as string);
+              if (file.type.startsWith('image/') || file.type === 'application/pdf') {
+                extractedText = await processImageWithOCR(e.target.result as string);
+              }
+            } else {
+              preview = await generatePreview(file, e.target.result as string);
             }
-
             onFileChange({
               name: file.name,
               type: file.type,
@@ -155,7 +227,7 @@ export function FileUploadCard({ onFileChange, currentFile }: FileUploadCardProp
               preview: preview || extractedText,
             });
 
-            // Modular v1.4: PDF in browser, DOCX via API
+            // Modular v1.5: Image extraction only for PDF/DOCX
             if (file.type === 'application/pdf') {
               try {
                 const pdfImages = await extractImagesFromPDF(file);
@@ -190,7 +262,6 @@ export function FileUploadCard({ onFileChange, currentFile }: FileUploadCardProp
                 });
               }
             }
-
             toast({
               title: "File uploaded",
               description: `${file.name} has been successfully uploaded.`,
