@@ -3,6 +3,9 @@
 import type { ChangeEvent } from 'react';
 import { useState } from 'react';
 import Papa from 'papaparse';
+import * as XLSX from 'xlsx';
+import mammoth from 'mammoth';
+import JSZip from 'jszip';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -10,8 +13,8 @@ import { useToast } from "@/hooks/use-toast";
 import { FileText, Image as ImageIcon, FileAudio, Sheet, XCircle, UploadCloud } from "lucide-react";
 
 interface FileUploadCardProps {
-  onFileChange: (file: { name: string; type: string; dataUri: string } | null) => void;
-  currentFile: { name: string; type: string; dataUri: string } | null;
+  onFileChange: (file: { name: string; type: string; dataUri: string; preview?: string } | null) => void;
+  currentFile: { name: string; type: string; dataUri: string; preview?: string } | null;
 }
 
 const MAX_FILE_SIZE_MB = 60; // Increased to 60MB
@@ -25,6 +28,10 @@ const ACCEPTED_FILE_TYPES = {
   'image/jpeg': ['.jpg', '.jpeg'],
   'audio/mpeg': ['.mp3'],
   'audio/wav': ['.wav'],
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
+  'text/plain': ['.txt'],
+  'application/json': ['.json'],
+  'application/zip': ['.zip'],
 };
 const ALL_ACCEPTED_EXTENSIONS = Object.values(ACCEPTED_FILE_TYPES).flat().join(',');
 const ALL_ACCEPTED_MIMES = Object.keys(ACCEPTED_FILE_TYPES).join(',');
@@ -34,8 +41,120 @@ export function FileUploadCard({ onFileChange, currentFile }: FileUploadCardProp
   const { toast } = useToast();
   const [dragOver, setDragOver] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [extractedImages, setExtractedImages] = useState<string[]>([]); // v1.3 modular image gallery
 
-  const handleFileSelect = (file: File | null) => {
+
+  const processImageWithOCR = async (dataUri: string): Promise<string> => {
+    try {
+      const response = await fetch('/api/ocr', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: dataUri })
+      });
+      const data = await response.json();
+      return data.text;
+    } catch (error) {
+      console.error('OCR processing failed:', error);
+      return '';
+    }
+  };
+
+  const generatePreview = async (file: File, dataUri: string): Promise<string> => {
+    if (file.type.startsWith('image/')) {
+      return dataUri; // Use the image directly as preview
+    }
+    if (file.type === 'application/pdf') {
+      // TODO: Implement PDF preview using pdf.js
+      return '';
+    }
+    if (file.type === 'text/plain' || file.type === 'application/json') {
+      const text = await file.text();
+      return text.slice(0, 1000); // First 1000 characters as preview
+    }
+    return '';
+  };
+
+  // Modular v1.4: Browser PDF image extraction utility
+  const extractImagesFromPDF = async (file: File): Promise<string[]> => {
+    const pdfjsLib = await import('pdfjs-dist/build/pdf');
+    // @ts-ignore
+    pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    const images: string[] = [];
+    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+      const page = await pdf.getPage(pageNum);
+      const ops = await page.getOperatorList();
+      const objs = page.objs;
+      for (let i = 0; i < ops.fnArray.length; i++) {
+        if (ops.fnArray[i] === pdfjsLib.OPS.paintImageXObject) {
+          const imgName = ops.argsArray[i][0];
+          const imgObj = objs.get(imgName);
+          if (imgObj && imgObj.src) {
+            images.push(imgObj.src);
+          }
+        }
+      }
+    }
+    return images.filter(Boolean);
+  };
+
+  // Modular v1.5: Utilities for extracting text from XLSX, DOCX, TXT, ZIP
+  const extractTextFromXLSX = async (file: File): Promise<string> => {
+    const data = await file.arrayBuffer();
+    const workbook = XLSX.read(data, { type: 'array' });
+    let text = '';
+    workbook.SheetNames.forEach(sheetName => {
+      const sheet = workbook.Sheets[sheetName];
+      const csv = XLSX.utils.sheet_to_csv(sheet);
+      text += `Sheet: ${sheetName}\n${csv}\n`;
+    });
+    return text.slice(0, 5000); // Limit preview/LLM input
+  };
+
+  const extractTextFromDOCX = async (file: File): Promise<string> => {
+    const arrayBuffer = await file.arrayBuffer();
+    const { value } = await mammoth.extractRawText({ arrayBuffer });
+    return value.slice(0, 5000); // Limit preview/LLM input
+  };
+
+  const extractTextFromTXT = async (file: File): Promise<string> => {
+    const text = await file.text();
+    return text.slice(0, 5000);
+  };
+
+  const extractTextFromZIP = async (file: File): Promise<string> => {
+    const zip = await JSZip.loadAsync(file);
+    let aggregated = '';
+    for (const filename of Object.keys(zip.files)) {
+      const entry = zip.files[filename];
+      if (!entry.dir) {
+        if (filename.endsWith('.txt')) {
+          const txt = await entry.async('string');
+          aggregated += `File: ${filename}\n${txt}\n`;
+        } else if (filename.endsWith('.docx')) {
+          const docxBlob = await entry.async('blob');
+          const arrayBuffer = await docxBlob.arrayBuffer();
+          const { value } = await mammoth.extractRawText({ arrayBuffer });
+          aggregated += `File: ${filename}\n${value}\n`;
+        } else if (filename.endsWith('.xlsx')) {
+          const xlsxBlob = await entry.async('blob');
+          const data = await xlsxBlob.arrayBuffer();
+          const workbook = XLSX.read(data, { type: 'array' });
+          workbook.SheetNames.forEach(sheetName => {
+            const sheet = workbook.Sheets[sheetName];
+            const csv = XLSX.utils.sheet_to_csv(sheet);
+            aggregated += `File: ${filename} (Sheet: ${sheetName})\n${csv}\n`;
+          });
+        }
+      }
+    }
+    return aggregated.slice(0, 5000);
+  };
+
+  const handleFileSelect = async (file: File | null) => {
+    setExtractedImages([]); // Reset gallery for new file
+
     if (!file) return;
 
     if (file.size > MAX_FILE_SIZE_BYTES) {
@@ -62,45 +181,108 @@ export function FileUploadCard({ onFileChange, currentFile }: FileUploadCardProp
     setIsUploading(true);
     const reader = new FileReader();
     reader.onload = (e) => {
-      if (e.target?.result) {
-        try {
-          // Only check for empty file if CSV, no parsing
-          if (file.type === 'text/csv') {
-            const csvContent = atob((e.target.result as string).split(',')[1] || '');
-            if (!csvContent.trim()) {
-              toast({
-                title: "CSV Error",
-                description: "The uploaded CSV file appears empty or invalid.",
-                variant: "destructive",
-              });
-              setIsUploading(false);
-              return;
+      const processFile = async () => {
+        if (e.target?.result) {
+          try {
+            // Only check for empty file if CSV, no parsing
+            if (file.type === 'text/csv') {
+              const csvContent = atob((e.target.result as string).split(',')[1] || '');
+              if (!csvContent.trim()) {
+                toast({
+                  title: "CSV Error",
+                  description: "The uploaded CSV file appears empty or invalid.",
+                  variant: "destructive",
+                });
+                setIsUploading(false);
+                return;
+              }
             }
+            let preview = '';
+            let extractedText = '';
+            // Modular v1.5: Handle file type for preview and Gemini
+            if (file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') {
+              extractedText = await extractTextFromXLSX(file);
+              preview = extractedText.slice(0, 1000);
+            } else if (file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+              extractedText = await extractTextFromDOCX(file);
+              preview = extractedText.slice(0, 1000);
+            } else if (file.type === 'text/plain') {
+              extractedText = await extractTextFromTXT(file);
+              preview = extractedText.slice(0, 1000);
+            } else if (file.type === 'application/zip') {
+              extractedText = await extractTextFromZIP(file);
+              preview = extractedText.slice(0, 1000);
+            } else if (file.type.startsWith('image/') || file.type === 'application/pdf') {
+              preview = await generatePreview(file, e.target.result as string);
+              if (file.type.startsWith('image/') || file.type === 'application/pdf') {
+                extractedText = await processImageWithOCR(e.target.result as string);
+              }
+            } else {
+              preview = await generatePreview(file, e.target.result as string);
+            }
+            onFileChange({
+              name: file.name,
+              type: file.type,
+              dataUri: e.target.result as string,
+              preview: preview || extractedText,
+            });
+
+            // Modular v1.5: Image extraction only for PDF/DOCX
+            if (file.type === 'application/pdf') {
+              try {
+                const pdfImages = await extractImagesFromPDF(file);
+                setExtractedImages(pdfImages);
+              } catch (err) {
+                setExtractedImages([]);
+                toast({
+                  title: "PDF image extraction error",
+                  description: "Could not extract images from this PDF.",
+                  variant: "destructive",
+                });
+              }
+            } else if (file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+              try {
+                const res = await fetch('/api/extract-images', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ file: e.target.result, fileType: file.type })
+                });
+                const data = await res.json();
+                if (Array.isArray(data.images) && data.images.length > 0) {
+                  setExtractedImages(data.images);
+                } else {
+                  setExtractedImages([]);
+                }
+              } catch (err) {
+                setExtractedImages([]);
+                toast({
+                  title: "DOCX image extraction error",
+                  description: "Could not extract images from this DOCX.",
+                  variant: "destructive",
+                });
+              }
+            }
+            toast({
+              title: "File uploaded",
+              description: `${file.name} has been successfully uploaded.`,
+            });
+          } catch (err) {
+            toast({
+              title: "File processing error",
+              description: "There was a problem reading or parsing your file.",
+              variant: "destructive",
+            });
           }
-          onFileChange({
-            name: file.name,
-            type: file.type,
-            dataUri: e.target.result as string,
-          });
+        } else {
           toast({
-            title: "File uploaded",
-            description: `${file.name} has been successfully uploaded.`,
-          });
-        } catch (err) {
-          toast({
-            title: "File processing error",
-            description: "There was a problem reading or parsing your file.",
+            title: "File read error",
+            description: "Could not read the selected file.",
             variant: "destructive",
           });
         }
-      } else {
-        toast({
-          title: "File read error",
-          description: "Could not read the selected file.",
-          variant: "destructive",
-        });
-      }
-      setIsUploading(false);
+        setIsUploading(false);
+      };
+      processFile();
     };
 
     reader.onerror = () => {
@@ -116,20 +298,22 @@ export function FileUploadCard({ onFileChange, currentFile }: FileUploadCardProp
     reader.readAsDataURL(file);
   };
 
-  const handleInputChange = (event: ChangeEvent<HTMLInputElement>) => {
+  const handleInputChange = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
-      handleFileSelect(file);
+      await handleFileSelect(file);
+
     }
     event.target.value = ''; // Reset input to allow re-uploading the same file
   };
   
-  const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
+  const handleDrop = async (event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
     event.stopPropagation();
     setDragOver(false);
     if (event.dataTransfer.files && event.dataTransfer.files.length > 0) {
-      handleFileSelect(event.dataTransfer.files[0]);
+      await handleFileSelect(event.dataTransfer.files[0]);
+
       event.dataTransfer.clearData();
     }
   };
@@ -167,9 +351,36 @@ export function FileUploadCard({ onFileChange, currentFile }: FileUploadCardProp
       </CardHeader>
       <CardContent className="px-6 pb-6">
         <div className="space-y-3">
+          {/* Modular v1.3: Image gallery for PDF/DOCX */}
+          {extractedImages.length > 0 && (
+            <div className="my-4">
+              <div className="font-semibold mb-2 text-blue-900">Extracted Images</div>
+              <div className="flex flex-wrap gap-3">
+                {extractedImages.map((img, idx) => (
+                  <div key={idx} className="border rounded-lg bg-white/80 p-2 shadow max-w-[140px] max-h-[140px] flex items-center justify-center">
+                    <img src={img} alt={`Extracted ${idx+1}`} className="object-contain max-h-[120px] max-w-[120px]" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {/* End modular v1.3 */}
           {currentFile && (
             <div className="flex items-center justify-between mb-2 bg-blue-50 rounded-full px-4 py-2 shadow-sm">
-              <div className="flex items-center gap-3">
+              <div className="flex flex-col w-full">
+                <div className="flex items-center gap-3 mb-2">
+                  {getFileIcon(currentFile.type)}
+                  <span className="font-medium truncate max-w-[200px] text-blue-900">{currentFile.name}</span>
+                </div>
+                {currentFile.preview && (
+                  <div className="mt-2 p-2 bg-white/50 rounded-lg text-sm text-blue-900 max-h-32 overflow-y-auto">
+                    {currentFile.type.startsWith('image/') ? (
+                      <img src={currentFile.preview} alt="Preview" className="max-h-28 object-contain mx-auto" />
+                    ) : (
+                      <pre className="whitespace-pre-wrap text-xs">{currentFile.preview}</pre>
+                    )}
+                  </div>
+                )}
                 {getFileIcon(currentFile.type)}
                 <span className="font-medium truncate max-w-[200px] text-blue-900">{currentFile.name}</span>
               </div>

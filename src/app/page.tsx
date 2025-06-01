@@ -78,7 +78,7 @@ function extractAnswer(raw: any): { answer: string, sources: string[] } {
 }
 
 export default function InsightFlowPage() {
-  const [currentFile, setCurrentFile] = useState<{ name: string; type: string; dataUri: string } | null>(null);
+  const [currentFile, setCurrentFile] = useState<{ name: string; type: string; dataUri: string; preview?: string } | null>(null);
   const [question, setQuestion] = useState<string>("");
   const [answerData, setAnswerData] = useState<CombinedAnswerData | null>(null);
   // Modular Q&A thread: persistent history
@@ -149,43 +149,79 @@ export default function InsightFlowPage() {
     try {
       // Build context from all previous Q&A in current thread
       const contextQA = qaHistory.map((qa, idx) => `Q${idx+1}: ${qa.question}\nA${idx+1}: ${qa.answer}`).join('\n');
-      const fullContext = `Conversation history:\n${contextQA}${qaHistory.length ? '\n' : ''}Q${qaHistory.length+1}: ${question}`;
-      
-      // Prepare request payload for the API
-      const requestData = {
-        question: fullContext || question,
-        fileDataUri: currentFile?.dataUri,
-        fileType: currentFile?.type,
-        requiresWebSearch: !currentFile // Auto web search if no file
-      };
-
-      // Call our new API endpoint
-      const response = await fetch('/api/ask', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestData),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || `Server error: ${response.status}`);
-      }
-
-      const apiResponse = await response.json();
-      
-      // Set intermediate loading message if web search is needed
-      if (apiResponse.requiresWebSearch) {
-        setAnswerData({ 
-          answer: "I could not find your query in this file so I will be searching internet now. Please stand by.", 
-          sources: [],
-          requiresWebSearch: true,
-          requiresImageGeneration: false 
+      const fullContext = `${systemPrompt}\nConversation history:\n${contextQA}${qaHistory.length ? '\n' : ''}Q${qaHistory.length+1}: ${question}`;
+      if (currentFile) {
+        // Pass full context to backend/LLM
+        const getFileContentForAnalysis = (file: typeof currentFile) => {
+          if (!file) return '';
+          if (
+            file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+            file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+            file.type === 'application/zip' ||
+            file.type === 'text/plain'
+          ) {
+            return file.preview || '';
+          }
+          return file.dataUri;
+        };
+        const analysisResult = await analyzeUploadedContent({
+          fileDataUri: getFileContentForAnalysis(currentFile),
+          question: fullContext,
+          fileType: currentFile.type
         });
+        finalAnswerData = analysisResult;
+
+        // Always extract the answer for further checks
+        const extracted = extractAnswer(analysisResult);
+
+        // If backend signals web search is needed, trigger it automatically
+        if ('requiresWebSearch' in analysisResult && analysisResult.requiresWebSearch) {
+          setAnswerData({ answer: "I could not find your query in this file so I will be searching internet now. Please stand by.", sources: [] });
+          const lastRelevant = [...qaHistory].reverse().find(qa => !/follow[- ]?up|search|internet|context|find out|look at/i.test(qa.question));
+          const webSearchQuery = lastRelevant ? lastRelevant.question : question;
+          finalAnswerData = await answerWithWebSearch({ question: webSearchQuery });
+        } else if (
+          extracted.answer &&
+          (shouldFallbackToWebSearch(extracted.answer) || (Array.isArray(extracted.sources) && extracted.sources.some(s => /search|web search/i.test(s))))
+        ) {
+          setAnswerData({ answer: "I could not find your query in this file so I will be searching internet now. Please stand by.", sources: [] });
+          finalAnswerData = await answerWithWebSearch({ question });
+        } else {
+          // Use the extracted answer for display
+          setAnswerData(extracted);
+        }
+
+        // Type guard for requiresImageGeneration and imageGenerationPrompt
+        if (
+          finalAnswerData &&
+          typeof finalAnswerData === 'object' &&
+          'requiresImageGeneration' in finalAnswerData &&
+          (finalAnswerData as any).requiresImageGeneration &&
+          'imageGenerationPrompt' in finalAnswerData &&
+          (finalAnswerData as any).imageGenerationPrompt &&
+          (currentFile.type === 'application/pdf' || currentFile.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+        ) {
+          try {
+            toast({ title: "Generating Image", description: "Please wait while the AI creates a visual representation." });
+            const imageResult: GenerateImageOutput = await generateImageFlow({
+              documentDataUri: currentFile.dataUri,
+              prompt: (finalAnswerData as any).imageGenerationPrompt,
+            });
+            if (imageResult.imageDataUri) {
+              (finalAnswerData as any).generatedImageUri = imageResult.imageDataUri;
+            }
+          } catch (imageError) {
+            toast({ title: "Image Generation Error", description: "Failed to generate image." });
+          }
+        }
+      } else {
+        // No file: always use context for web search
+        // Try to extract the last non-follow-up question for web search
+        const lastRelevant = [...qaHistory].reverse().find(qa => !/follow[- ]?up|search|internet|context|find out|look at/i.test(qa.question));
+        const webSearchQuery = lastRelevant ? lastRelevant.question : question;
+        finalAnswerData = await answerWithWebSearch({ question: webSearchQuery });
       }
       
-      finalAnswerData = apiResponse;
       setAnswerData(finalAnswerData);
 
       // Append to Q&A history
@@ -237,26 +273,20 @@ export default function InsightFlowPage() {
     setEDAloading(true);
     setEdaResult(null);
     try {
-      // Call our API endpoint with EDA request
-      const response = await fetch('/api/ask', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          question: 'Run EDA on this file and provide a comprehensive analysis',
-          fileDataUri: currentFile.dataUri,
-          fileType: currentFile.type,
-          requiresWebSearch: false
-        }),
+      const getFileContentForAnalysis = (file: typeof currentFile) => {
+        if (!file) return '';
+        if (
+          file.type === 'text/csv' && file.preview
+        ) {
+          return file.preview;
+        }
+        return file.dataUri;
+      };
+      const analysisResult = await analyzeUploadedContent({
+        fileDataUri: getFileContentForAnalysis(currentFile),
+        question: 'Run EDA',
+        fileType: currentFile.type,
       });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || `Server error: ${response.status}`);
-      }
-
-      const analysisResult = await response.json();
       setEdaResult(analysisResult);
       toast({ title: "EDA Complete", description: "Exploratory Data Analysis has completed for your CSV file." });
     } catch (error) {
