@@ -1,7 +1,7 @@
-import React from 'react';
-import { Trash2, Upload } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
+import React from "react";
+import { Trash2, Upload } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 interface FileManagerProps {
   fileName: string;
@@ -15,11 +15,14 @@ export function FileManager({
   fileName,
   onDelete,
   onReupload,
-  className
+  className,
 }: FileManagerProps) {
   return (
-    <div className={cn('flex items-center gap-2', className)}>
-      <p className="text-sm text-muted-foreground flex-1 truncate" title={fileName}>
+    <div className={cn("flex items-center gap-2", className)}>
+      <p
+        className="text-sm text-muted-foreground flex-1 truncate"
+        title={fileName}
+      >
         {fileName}
       </p>
       <Button

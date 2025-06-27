@@ -1,6 +1,6 @@
-import React, { useState, useCallback } from 'react';
-import { cn } from '@/lib/utils';
-import { UploadCloud } from 'lucide-react';
+import React, { useState, useCallback } from "react";
+import { cn } from "@/lib/utils";
+import { UploadCloud } from "lucide-react";
 
 interface DragDropZoneProps {
   onFileDrop: (file: File) => void;
@@ -51,17 +51,17 @@ export function DragDropZone({
         e.dataTransfer.clearData();
       }
     },
-    [acceptedTypes, onFileDrop]
+    [acceptedTypes, onFileDrop],
   );
 
   return (
     <div
       className={cn(
-        'relative rounded-lg border-2 border-dashed transition-colors',
+        "relative rounded-lg border-2 border-dashed transition-colors",
         isDragging
-          ? 'border-primary bg-primary/5 dark:bg-primary/10'
-          : 'border-muted-foreground/25 hover:border-primary/50',
-        className
+          ? "border-primary bg-primary/5 dark:bg-primary/10"
+          : "border-muted-foreground/25 hover:border-primary/50",
+        className,
       )}
       onDragEnter={handleDragIn}
       onDragLeave={handleDragOut}
@@ -72,7 +72,9 @@ export function DragDropZone({
         <div className="absolute inset-0 flex items-center justify-center bg-primary/5 dark:bg-primary/10 rounded-lg">
           <div className="text-center">
             <UploadCloud className="mx-auto h-12 w-12 text-primary" />
-            <p className="mt-2 text-sm text-primary font-medium">Drop to upload</p>
+            <p className="mt-2 text-sm text-primary font-medium">
+              Drop to upload
+            </p>
           </div>
         </div>
       )}

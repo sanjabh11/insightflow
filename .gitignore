@@ -38,8 +38,10 @@ yarn-error.log*
 next-env.d.ts
 
 .genkit/*
-.env*
+#.env*
 
 # firebase
 firebase-debug.log
 firestore-debug.log
+# Local Netlify folder
+.netlify

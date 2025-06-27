@@ -1,4 +1,4 @@
-import type { SVGProps } from 'react';
+import type { SVGProps } from "react";
 
 export function Logo(props: SVGProps<SVGSVGElement>) {
   return (
@@ -12,12 +12,31 @@ export function Logo(props: SVGProps<SVGSVGElement>) {
     >
       <defs>
         <linearGradient id="logoGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" style={{ stopColor: 'hsl(var(--primary))', stopOpacity: 1 }} />
-          <stop offset="100%" style={{ stopColor: 'hsl(var(--accent))', stopOpacity: 1 }} />
+          <stop
+            offset="0%"
+            style={{ stopColor: "hsl(var(--primary))", stopOpacity: 1 }}
+          />
+
+          <stop
+            offset="100%"
+            style={{ stopColor: "hsl(var(--accent))", stopOpacity: 1 }}
+          />
         </linearGradient>
       </defs>
-      <path d="M10 40 Q15 10 20 40 Q25 10 30 40" stroke="url(#logoGradient)" fill="transparent" strokeWidth="3" />
-      <path d="M35 40 Q40 10 45 40 Q50 10 55 40" stroke="url(#logoGradient)" fill="transparent" strokeWidth="3" />
+      <path
+        d="M10 40 Q15 10 20 40 Q25 10 30 40"
+        stroke="url(#logoGradient)"
+        fill="transparent"
+        strokeWidth="3"
+      />
+
+      <path
+        d="M35 40 Q40 10 45 40 Q50 10 55 40"
+        stroke="url(#logoGradient)"
+        fill="transparent"
+        strokeWidth="3"
+      />
+
       <text
         x="70"
         y="35"

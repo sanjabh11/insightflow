@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
-import { read as readXLSX, utils as xlsxUtils } from 'xlsx';
-import JSZip from 'jszip';
-import { useToast } from '@/hooks/use-toast';
+import { useState, useEffect } from "react";
+import { read as readXLSX, utils as xlsxUtils } from "xlsx";
+import JSZip from "jszip";
+import { useToast } from "@/hooks/use-toast";
 
 interface FilePreviewProps {
   file: File | null;
@@ -9,9 +9,12 @@ interface FilePreviewProps {
 }
 
 // Version 1.0: Initial file preview implementation
-export function FilePreview({ file, maxPreviewSize = 1024 * 1024 * 2 }: FilePreviewProps) {
+export function FilePreview({
+  file,
+  maxPreviewSize = 1024 * 1024 * 2,
+}: FilePreviewProps) {
   const { toast } = useToast();
-  const [previewContent, setPreviewContent] = useState<string>('');
+  const [previewContent, setPreviewContent] = useState<string>("");
   const [isLoading, setIsLoading] = useState(false);
 
   const previewFile = async (file: File) => {
@@ -19,39 +22,40 @@ export function FilePreview({ file, maxPreviewSize = 1024 * 1024 * 2 }: FilePrev
     try {
       if (file.size > maxPreviewSize) {
         toast({
-          title: 'File too large for preview',
-          description: 'Only the first 2MB will be shown in the preview.',
-          variant: 'default',
+          title: "File too large for preview",
+          description: "Only the first 2MB will be shown in the preview.",
+          variant: "default",
         });
       }
 
-      let content = '';
+      let content = "";
       const fileType = file.type.toLowerCase();
       const fileName = file.name.toLowerCase();
 
       // Handle different file types
-      if (fileType === 'application/json' || fileName.endsWith('.json')) {
+      if (fileType === "application/json" || fileName.endsWith(".json")) {
         content = await previewJSON(file);
       } else if (
-        fileType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
-        fileName.endsWith('.xlsx')
+        fileType ===
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
+        fileName.endsWith(".xlsx")
       ) {
         content = await previewXLSX(file);
-      } else if (fileType === 'application/zip' || fileName.endsWith('.zip')) {
+      } else if (fileType === "application/zip" || fileName.endsWith(".zip")) {
         content = await previewZIP(file);
-      } else if (fileType === 'text/plain' || fileName.endsWith('.txt')) {
+      } else if (fileType === "text/plain" || fileName.endsWith(".txt")) {
         content = await previewText(file);
       } else {
-        content = 'Preview not available for this file type.';
+        content = "Preview not available for this file type.";
       }
 
       setPreviewContent(content);
     } catch (error) {
-      console.error('Error previewing file:', error);
+      console.error("Error previewing file:", error);
       toast({
-        title: 'Preview Error',
-        description: 'Failed to generate preview for this file.',
-        variant: 'destructive',
+        title: "Preview Error",
+        description: "Failed to generate preview for this file.",
+        variant: "destructive",
       });
     } finally {
       setIsLoading(false);
@@ -65,7 +69,7 @@ export function FilePreview({ file, maxPreviewSize = 1024 * 1024 * 2 }: FilePrev
       const parsed = JSON.parse(text);
       return JSON.stringify(parsed, null, 2);
     } catch {
-      throw new Error('Invalid JSON file');
+      throw new Error("Invalid JSON file");
     }
   };
 
@@ -80,7 +84,7 @@ export function FilePreview({ file, maxPreviewSize = 1024 * 1024 * 2 }: FilePrev
   const previewZIP = async (file: File): Promise<string> => {
     const zip = new JSZip();
     const contents = await zip.loadAsync(file);
-    const files = Object.keys(contents.files).map(name => ({
+    const files = Object.keys(contents.files).map((name) => ({
       name,
     }));
     return JSON.stringify(files, null, 2);
@@ -95,7 +99,7 @@ export function FilePreview({ file, maxPreviewSize = 1024 * 1024 * 2 }: FilePrev
     if (file) {
       previewFile(file);
     } else {
-      setPreviewContent('');
+      setPreviewContent("");
     }
   }, [file]);
 
@@ -107,7 +111,9 @@ export function FilePreview({ file, maxPreviewSize = 1024 * 1024 * 2 }: FilePrev
         <div className="mb-4 p-2 bg-blue-50 text-blue-900 rounded flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="font-medium">{file.name}</span>
-            <span className="text-xs text-blue-600">({(file.size / 1024).toFixed(1)} KB)</span>
+            <span className="text-xs text-blue-600">
+              ({(file.size / 1024).toFixed(1)} KB)
+            </span>
           </div>
         </div>
       )}

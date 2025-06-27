@@ -34,8 +34,9 @@ import { AppHeader } from '@/components/AppHeader';
 import { FileUploadCard } from '@/components/FileUploadCard';
 import { QueryInputCard } from '@/components/QueryInputCard';
 import { AnswerDisplayCard } from '@/components/AnswerDisplayCard';
-import { VisualizationCard } from '@/components/VisualizationCard';
 import { AudioControlsCard } from '@/components/AudioControlsCard';
+import { VisualizationCard } from '@/components/VisualizationCard';
+import { motion, AnimatePresence } from 'framer-motion';
 import { DarkModeToggle } from '@/components/DarkModeToggle'; // Version 1.0 modular import
 
 import { analyzeUploadedContent, type AnalyzeUploadedContentOutput } from '@/ai/flows/analyze-uploaded-content';
@@ -52,7 +53,24 @@ type CombinedAnswerData = (AnalyzeUploadedContentOutput | AnswerWithWebSearchOut
 
 // Helper: Detect if the answer indicates the file/image is not relevant
 function shouldFallbackToWebSearch(answer: string): boolean {
-  return /not relevant to the question|does not contain information|cannot provide instructions|image provided does not contain|file provided does not contain|I am sorry, but the image|I am sorry, but the file|no relevant information|does not answer your question|unable to answer based on the provided/i.test(answer);
+  return /not relevant to the question|does not contain information|cannot provide instructions|image provided does not contain|file provided does not contain|I am sorry, but the image|I am sorry, but the file|no relevant information|does not answer your question|unable to answer based on the provided|no answer found|no answer/i.test(answer);
+}
+
+// Modular: Web search fallback using Firecrawl
+async function fetchWebSearchAnswer(query: string): Promise<{ answer: string; sources: {title: string, url: string}[] }> {
+  // Firecrawl or similar API integration
+  try {
+    const response = await fetch('/api/websearch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query })
+    });
+    if (!response.ok) throw new Error('Web search failed');
+    const data = await response.json();
+    return { answer: data.answer, sources: data.sources || [] };
+  } catch (err) {
+    return { answer: 'No relevant answer found on the internet.', sources: [] };
+  }
 }
 
 // Helper: Parse JSON answers and extract the 'answer' field
@@ -126,11 +144,7 @@ export default function InsightFlowPage() {
     }
   };
 
-  /**
-   * Version 1.9: Modular API-based query handler
-   * This implementation uses the dedicated API route instead of direct function calls
-   * to properly separate client and server logic.
-   */
+  // Version 2.9.1: Proactive web search fallback
   const handleQuerySubmit = async () => {
     if (!question.trim()) {
       toast({ title: "Empty question", description: "Please enter a question.", variant: "destructive" });
@@ -302,15 +316,22 @@ export default function InsightFlowPage() {
   return (
     <div className="min-h-screen w-full bg-gradient-to-br from-blue-50 via-white to-indigo-50 font-sans">
       <header className="w-full py-6 px-4 flex flex-col gap-1 items-start bg-white/80 dark:bg-gray-900 shadow-sm mb-6">
-  <div className="w-full flex flex-row items-center justify-between">
-    <span className="text-2xl font-extrabold text-blue-800 dark:text-blue-100 tracking-tight">InsightFlow</span>
-    <DarkModeToggle />
-  </div>
-  <div className="mt-1 text-sm text-blue-900/70 dark:text-gray-400 font-medium">AI-powered file analysis and Q&A</div>
-</header>
-      <main className="w-full max-w-7xl mx-auto flex flex-row gap-8 px-4 md:px-0">
+        <div className="w-full flex flex-row items-center justify-between">
+          <span className="text-2xl font-extrabold text-blue-800 dark:text-blue-100 tracking-tight">InsightFlow</span>
+          <DarkModeToggle />
+        </div>
+        <div className="mt-1 text-sm text-blue-900/70 dark:text-gray-400 font-medium">AI-powered file analysis and Q&A</div>
+      </header>
+      <main className="w-full max-w-7xl mx-auto flex flex-col md:flex-row gap-6 md:gap-8 px-2 sm:px-4">
         {/* Left Panel */}
-        <div className="flex flex-col gap-6 max-w-xs w-full md:w-1/4 overflow-y-auto">
+        <motion.section
+          initial={{ opacity: 0, x: -30 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0, x: -30 }}
+          transition={{ duration: 0.4 }}
+          className="flex flex-col gap-6 w-full md:w-1/4 max-w-xs md:max-w-xs mb-4 md:mb-0"
+        >
+        {/* Left Panel */}
           <FileUploadCard onFileChange={handleFileChange} currentFile={currentFile} />
           <QueryInputCard
             question={question}
@@ -320,45 +341,75 @@ export default function InsightFlowPage() {
             speechControl={speech}
           />
           <AudioControlsCard speechControl={speech} />
-        </div>
+        </motion.section>
         {/* Middle Panel: Q&A, Answer, EDA, Follow-up */}
-        <div className="flex-1 flex flex-col gap-6 w-full md:w-2/4">
-          {/* Q&A thread: show all Q&A pairs */}
+        <motion.section
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 30 }}
+          transition={{ duration: 0.5 }}
+          className="flex-1 flex flex-col gap-6 w-full md:w-2/4"
+        >
           <div className="space-y-4">
-            {qaHistory.map((qa, idx) => (
-              <div key={idx} className="border rounded p-4 bg-white/70">
-                <div className="font-semibold text-primary mb-1">Q{idx + 1}: {qa.question}</div>
-                <div className="text-gray-900">{qa.answer}</div>
-              </div>
-            ))}
+            <AnimatePresence>
+              {qaHistory.map((qa, idx) => (
+                <motion.div
+                  key={idx}
+                  initial={{ opacity: 0, scale: 0.98 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.98 }}
+                  transition={{ duration: 0.25 }}
+                  className="border rounded-xl p-4 bg-white/80 shadow-sm"
+                >
+                  <div className="font-semibold text-primary mb-1">Q{idx + 1}: {qa.question}</div>
+                  <div className="text-gray-900">{qa.answer}</div>
+                </motion.div>
+              ))}
+            </AnimatePresence>
           </div>
-          {/* Show latest answer in card (for speech, etc) */}
-          {answerData && (
-            <AnswerDisplayCard
-              answerData={answerData}
-              isLoading={isLoading}
-              speechControl={speech}
-            />
-          )}
-          {/* EDA Button for CSVs only - always visible in middle panel when applicable */}
+          <AnimatePresence>
+            {answerData && (
+              <motion.div
+                initial={{ opacity: 0, y: 24 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 24 }}
+                transition={{ duration: 0.4 }}
+              >
+                <AnswerDisplayCard
+                  answerData={answerData}
+                  isLoading={isLoading}
+                  speechControl={speech}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
           {showEDAButton && !edaResult && (
-            <button
-              className={`w-full mt-2 py-2 px-4 rounded bg-primary text-white font-semibold ${isEDAloading ? 'opacity-60 cursor-not-allowed' : 'hover:bg-primary/80'}`}
+            <motion.button
+              whileHover={{ scale: 1.03 }}
+              whileTap={{ scale: 0.97 }}
+              className={`w-full mt-2 py-2 px-4 rounded-xl bg-primary text-white font-semibold shadow-md ${isEDAloading ? 'opacity-60 cursor-not-allowed' : 'hover:bg-primary/80'}`}
               onClick={handleEDA}
               disabled={isEDAloading || isLoading}
               aria-label="Run EDA"
             >
               {isEDAloading ? 'Running EDA...' : 'Run EDA (CSV Only)'}
-            </button>
+            </motion.button>
           )}
-          {/* Modular EDA: Only show VisualizationCard after EDA is run and result is available */}
           {showEDAButton && edaResult && (
-            <VisualizationCard csvDataUri={currentFile.dataUri} />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.97 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.97 }}
+              transition={{ duration: 0.4 }}
+            >
+              <VisualizationCard csvDataUri={currentFile.dataUri} />
+            </motion.div>
           )}
-          {/* Follow-up Questions Button: Only show after first answer for uploaded file */}
           {currentFile && answerData && (
-            <button
-              className="w-full mt-2 py-2 px-4 rounded bg-secondary text-primary font-semibold border border-primary hover:bg-primary/10"
+            <motion.button
+              whileHover={{ scale: 1.03 }}
+              whileTap={{ scale: 0.97 }}
+              className="w-full mt-2 py-2 px-4 rounded-xl bg-secondary text-primary font-semibold border border-primary hover:bg-primary/10 shadow"
               onClick={() => {
                 setQuestion("");
                 setAnswerData(null);
@@ -366,14 +417,25 @@ export default function InsightFlowPage() {
               aria-label="Ask Follow-up Question"
             >
               Ask Follow-up Question
-            </button>
+            </motion.button>
           )}
-        </div>
+        </motion.section>
         {/* Right Panel: Conversation history and actions */}
-        <div className="flex flex-col gap-6 max-w-xs w-full md:w-1/4 overflow-y-auto">
-          {/* Conversation History */}
-          {conversations.length > 0 && (
-            <div className="mb-4">
+        <motion.section
+          initial={{ opacity: 0, x: 30 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0, x: 30 }}
+          transition={{ duration: 0.4 }}
+          className="flex flex-col gap-6 w-full md:w-1/4 max-w-xs md:max-w-xs overflow-y-auto"
+        >
+          {conversations.length > 0 ? (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.98 }}
+              transition={{ duration: 0.25 }}
+              className="mb-4 border rounded-xl p-4 bg-white/90 shadow"
+            >
               <div className="flex items-center justify-between mb-2">
                 <div className="font-bold text-md text-primary">Previous Conversations</div>
                 <button
@@ -401,71 +463,71 @@ export default function InsightFlowPage() {
               </div>
               <div className="space-y-2 max-h-64 overflow-y-auto">
                 {conversations.map((conv, cIdx) => (
-                  <div
-                    key={cIdx}
-                    className="border rounded p-2 bg-gray-50 transition relative"
-                    aria-label="Run EDA"
-                  >
-                    {/* Collapse/expand and rename controls */}
-                    <div className="flex items-center justify-between mb-1">
-                      {renamingIdx === cIdx ? (
-                        <input
-                          className="border px-2 py-1 rounded text-primary font-semibold w-2/3"
-                          value={renameValue}
-                          autoFocus
-                          onChange={e => setRenameValue(e.target.value)}
-                          onBlur={() => {
-                            setConversations(prev => prev.map((c, idx) => idx === cIdx ? { ...c, title: renameValue || c.title } : c));
-                            setRenamingIdx(null);
-                          }}
-                          onKeyDown={e => {
-                            if (e.key === 'Enter') {
-                              setConversations(prev => prev.map((c, idx) => idx === cIdx ? { ...c, title: renameValue || c.title } : c));
-                              setRenamingIdx(null);
-                            }
-                          }}
-                        />
-                      ) : (
-                        <span className="font-semibold text-primary cursor-pointer" title="Click to rename" onClick={() => { setRenamingIdx(cIdx); setRenameValue(conv.title); }}>{conv.title}</span>
-                      )}
-                      <div className="flex items-center gap-2">
-                        <button
-                          className="text-xs text-blue-700 hover:underline"
-                          onClick={() => setConversations(prev => prev.map((c, idx) => idx === cIdx ? { ...c, collapsed: !c.collapsed } : c))}
-                          aria-label={conv.collapsed ? 'Expand thread' : 'Collapse thread'}
-                        >
-                          {conv.collapsed ? 'Expand' : 'Collapse'}
-                        </button>
-                        <button
-                          className="text-xs text-green-700 hover:underline"
-                          title="Click to revisit and continue this conversation"
-                          onClick={() => {
-                            setQaHistory(conv.conversation);
-                            setConversations(prev => prev.filter((_, i) => i !== cIdx));
-                            setQuestion("");
-                            setAnswerData(null);
-                          }}
-                          aria-label={`Revisit conversation ${cIdx + 1}`}
-                        >
-                          Continue
-                        </button>
-                      </div>
-                    </div>
-                    {!conv.collapsed && (
-                      <div>
-                        {conv.conversation.map((qa, idx) => (
-                          <div key={idx} className="mb-1">
-                            <span className="font-semibold text-primary">Q{idx + 1}:</span> {qa.question}
-                            <div className="ml-4 text-gray-900">{qa.answer}</div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ))}
+  <div
+    key={cIdx}
+    className="border rounded p-2 bg-gray-50 transition relative"
+    aria-label="Run EDA"
+  >
+    {/* Collapse/expand and rename controls */}
+    <div className="flex items-center justify-between mb-1">
+      {renamingIdx === cIdx ? (
+        <input
+          className="border px-2 py-1 rounded text-primary font-semibold w-2/3"
+          value={renameValue}
+          autoFocus
+          onChange={e => setRenameValue(e.target.value)}
+          onBlur={() => {
+            setConversations(prev => prev.map((c, idx) => idx === cIdx ? { ...c, title: renameValue || c.title } : c));
+            setRenamingIdx(null);
+          }}
+          onKeyDown={e => {
+            if (e.key === 'Enter') {
+              setConversations(prev => prev.map((c, idx) => idx === cIdx ? { ...c, title: renameValue || c.title } : c));
+              setRenamingIdx(null);
+            }
+          }}
+        />
+      ) : (
+        <span className="font-semibold text-primary cursor-pointer" title="Click to rename" onClick={() => { setRenamingIdx(cIdx); setRenameValue(conv.title); }}>{conv.title}</span>
+      )}
+      <div className="flex items-center gap-2">
+        <button
+          className="text-xs text-blue-700 hover:underline"
+          onClick={() => setConversations(prev => prev.map((c, idx) => idx === cIdx ? { ...c, collapsed: !c.collapsed } : c))}
+          aria-label={conv.collapsed ? 'Expand thread' : 'Collapse thread'}
+        >
+          {conv.collapsed ? 'Expand' : 'Collapse'}
+        </button>
+        <button
+          className="text-xs text-green-700 hover:underline"
+          title="Click to revisit and continue this conversation"
+          onClick={() => {
+            setQaHistory(conv.conversation);
+            setConversations(prev => prev.filter((_, i) => i !== cIdx));
+            setQuestion("");
+            setAnswerData(null);
+          }}
+          aria-label={`Revisit conversation ${cIdx + 1}`}
+        >
+          Continue
+        </button>
+      </div>
+    </div>
+    {!conv.collapsed && (
+      <div>
+        {conv.conversation.map((qa, idx) => (
+          <div key={idx} className="border-b border-gray-200 py-2">
+            <div className="font-semibold text-primary mb-1">Q{idx + 1}: {qa.question}</div>
+            <div className="text-gray-900">{qa.answer}</div>
+          </div>
+        ))}
+      </div>
+    )}
+  </div>
+))}
               </div>
-            </div>
-          )}
+            </motion.div>
+          ) : null}
           {/* New Question Button: Always visible if there is any Q&A history */}
           {qaHistory.length > 0 && (
             <button
@@ -497,7 +559,7 @@ export default function InsightFlowPage() {
               Erase History
             </button>
           )}
-        </div>
+        </motion.section>
       </main>
       <footer className="text-center p-4 text-sm text-muted-foreground border-t border-border">
         &copy; {new Date().getFullYear()} InsightFlow. All rights reserved.

@@ -2,9 +2,28 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer utilities {
+  .mobile-container {
+    @apply max-w-full px-2 py-2 sm:px-4 sm:py-6;
+  }
+  .mobile-card {
+    @apply rounded-lg shadow-md border bg-card p-4 sm:p-6;
+  }
+  .mobile-header {
+    @apply text-xl sm:text-2xl font-bold text-primary mb-2;
+  }
+  .mobile-section {
+    @apply mb-4;
+  }
+  .mobile-btn {
+    @apply w-full sm:w-auto px-4 py-2 rounded-lg font-semibold bg-primary text-primary-foreground hover:bg-primary/80 transition;
+  }
+}
+
+
 @layer base {
   :root {
-    --background: 0 0% 100%; /* Light Gray/White base */
+    --background: 210 100% 97%; /* Very Light Blue base */
     --foreground: 240 10% 3.9%; /* Dark Gray/Black */
 
     --card: 0 0% 100%;
@@ -13,17 +32,17 @@
     --popover: 0 0% 100%;
     --popover-foreground: 240 10% 3.9%;
 
-    --primary: 180 100% 25%; /* Teal */
-    --primary-foreground: 0 0% 98%; /* White */
+    --primary: 210 100% 60%; /* Student-friendly Light Blue */
+    --primary-foreground: 0 0% 100%; /* White */
 
-    --secondary: 0 0% 90%; /* Lighter variant of Light Gray for secondary elements */
-    --secondary-foreground: 240 10% 3.9%; /* Dark Gray/Black */
+    --secondary: 210 100% 95%; /* Very light blue background for secondary */
+    --secondary-foreground: 210 100% 30%; /* Blue text */
 
-    --muted: 0 0% 96.1%;
-    --muted-foreground: 240 3.8% 46.1%;
+    --muted: 210 60% 97%; /* Subtle blue-muted */
+    --muted-foreground: 210 40% 40%; /* Muted blue text */
 
-    --accent: 300 100% 25%; /* Purple */
-    --accent-foreground: 0 0% 98%; /* White */
+    --accent: 200 100% 80%; /* Soft blue accent */
+    --accent-foreground: 210 100% 30%; /* Blue text */
 
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 0 0% 98%;

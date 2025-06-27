@@ -1,11 +1,27 @@
+"use client";
 
-'use client';
-
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
-import type { LanguageCode, useSpeech as useSpeechType } from '@/hooks/useSpeech'; // Import useSpeechType for ReturnType
-import { Volume2, Languages } from 'lucide-react';
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import type {
+  LanguageCode,
+  useSpeech as useSpeechType,
+} from "@/hooks/useSpeech"; // Import useSpeechType for ReturnType
+import { Volume2, Languages } from "lucide-react";
 
 interface AudioControlsCardProps {
   speechControl: ReturnType<typeof useSpeechType>;
@@ -19,7 +35,7 @@ export function AudioControlsCard({ speechControl }: AudioControlsCardProps) {
     setSelectedVoiceURI,
     selectedLanguage,
     setSelectedLanguage,
-    error
+    error,
   } = speechControl; // Use the passed prop
 
   if (!supported) {
@@ -35,15 +51,19 @@ export function AudioControlsCard({ speechControl }: AudioControlsCardProps) {
           <p className="text-muted-foreground">
             Speech synthesis and recognition are not supported by your browser.
           </p>
-          {error && <p className="text-destructive mt-2 text-sm">{error.error} {error.message}</p>}
+          {error && (
+            <p className="text-destructive mt-2 text-sm">
+              {error.error} {error.message}
+            </p>
+          )}
         </CardContent>
       </Card>
     );
   }
 
-  const femaleVoices = voices.filter(v => v.gender === 'female');
-  const maleVoices = voices.filter(v => v.gender === 'male');
-  const otherVoices = voices.filter(v => v.gender === undefined);
+  const femaleVoices = voices.filter((v) => v.gender === "female");
+  const maleVoices = voices.filter((v) => v.gender === "male");
+  const otherVoices = voices.filter((v) => v.gender === undefined);
 
   return (
     <Card className="w-full max-w-xl mx-auto bg-white/90 shadow-lg rounded-2xl border-0">
@@ -52,16 +72,23 @@ export function AudioControlsCard({ speechControl }: AudioControlsCardProps) {
           <Volume2 className="w-6 h-6 text-blue-500" />
           Audio Controls
         </CardTitle>
-        <CardDescription className="text-neutral-500">Select language and voice for audio responses.</CardDescription>
+        <CardDescription className="text-neutral-500">
+          Select language and voice for audio responses.
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6 px-6 pb-6">
         <div className="space-y-2">
-          <Label htmlFor="language-select" className="flex items-center gap-1 text-base font-medium text-blue-900">
+          <Label
+            htmlFor="language-select"
+            className="flex items-center gap-1 text-base font-medium text-blue-900"
+          >
             <Languages className="w-4 h-4 text-blue-500" /> Language
           </Label>
           <Select
             value={selectedLanguage}
-            onValueChange={(value) => setSelectedLanguage(value as LanguageCode)}
+            onValueChange={(value) =>
+              setSelectedLanguage(value as LanguageCode)
+            }
           >
             <SelectTrigger id="language-select" aria-label="Select language">
               <SelectValue placeholder="Select language" />
@@ -78,15 +105,23 @@ export function AudioControlsCard({ speechControl }: AudioControlsCardProps) {
             <Volume2 className="w-4 h-4" /> Voice
           </Label>
           <Select
-            value={selectedVoiceURI || ''}
+            value={selectedVoiceURI || ""}
             onValueChange={(value) => value && setSelectedVoiceURI(value)}
             disabled={voices.length === 0}
           >
             <SelectTrigger id="voice-select" aria-label="Select voice">
-              <SelectValue placeholder={voices.length > 0 ? "Select voice" : "No voices for language"} />
+              <SelectValue
+                placeholder={
+                  voices.length > 0 ? "Select voice" : "No voices for language"
+                }
+              />
             </SelectTrigger>
             <SelectContent>
-              {voices.length === 0 && <SelectItem value="no-voices-placeholder" disabled>No voices available</SelectItem>}
+              {voices.length === 0 && (
+                <SelectItem value="no-voices-placeholder" disabled>
+                  No voices available
+                </SelectItem>
+              )}
 
               {femaleVoices.length > 0 && (
                 <SelectGroup>
@@ -111,7 +146,7 @@ export function AudioControlsCard({ speechControl }: AudioControlsCardProps) {
               )}
 
               {otherVoices.length > 0 && (
-                 <SelectGroup>
+                <SelectGroup>
                   <SelectLabel>Other Voices</SelectLabel>
                   {otherVoices.map((voice) => (
                     <SelectItem key={voice.voiceURI} value={voice.voiceURI}>
@@ -120,20 +155,28 @@ export function AudioControlsCard({ speechControl }: AudioControlsCardProps) {
                   ))}
                 </SelectGroup>
               )}
-              {(femaleVoices.length === 0 && maleVoices.length === 0 && otherVoices.length === 0 && voices.length > 0) && (
-                 <SelectGroup>
+              {femaleVoices.length === 0 &&
+                maleVoices.length === 0 &&
+                otherVoices.length === 0 &&
+                voices.length > 0 && (
+                  <SelectGroup>
                     <SelectLabel>Available Voices</SelectLabel>
                     {voices.map((voice) => (
-                        <SelectItem key={voice.voiceURI} value={voice.voiceURI}>
+                      <SelectItem key={voice.voiceURI} value={voice.voiceURI}>
                         {voice.name} ({voice.lang})
-                        </SelectItem>
+                      </SelectItem>
                     ))}
-                 </SelectGroup>
-              )}
+                  </SelectGroup>
+                )}
             </SelectContent>
           </Select>
         </div>
-        {error && <p className="text-destructive text-sm">{error.error}{error.message ? `: ${error.message}`: ''}</p>}
+        {error && (
+          <p className="text-destructive text-sm">
+            {error.error}
+            {error.message ? `: ${error.message}` : ""}
+          </p>
+        )}
       </CardContent>
     </Card>
   );

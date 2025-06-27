@@ -1,4 +1,4 @@
-import { Logo } from '@/components/icons/Logo';
+import { Logo } from "@/components/icons/Logo";
 
 export function AppHeader() {
   return (

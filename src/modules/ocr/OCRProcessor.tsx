@@ -1,6 +1,11 @@
-import { useState } from 'react';
-import { createWorker, Worker, WorkerParams, WorkerOptions } from 'tesseract.js';
-import { useToast } from '@/hooks/use-toast';
+import { useState } from "react";
+import {
+  createWorker,
+  Worker,
+  WorkerParams,
+  WorkerOptions,
+} from "tesseract.js";
+import { useToast } from "@/hooks/use-toast";
 
 interface OCRProcessorProps {
   imageFile: File | null;
@@ -9,7 +14,11 @@ interface OCRProcessorProps {
 }
 
 // Version 1.0: Initial OCR implementation
-export function OCRProcessor({ imageFile, onComplete, onError }: OCRProcessorProps) {
+export function OCRProcessor({
+  imageFile,
+  onComplete,
+  onError,
+}: OCRProcessorProps) {
   const { toast } = useToast();
   const [progress, setProgress] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -25,34 +34,38 @@ export function OCRProcessor({ imageFile, onComplete, onError }: OCRProcessorPro
 
       (worker as any).logger = {
         logger: (m: WorkerParams) => {
-          if (m.status === 'recognizing text') {
+          if (m.status === "recognizing text") {
             setProgress(parseInt(m.progress.toString()) * 100);
           }
-        }
+        },
       };
 
-      await (worker as any).loadLanguage('eng');
-      await (worker as any).initialize('eng');
+      await (worker as any).loadLanguage("eng");
+      await (worker as any).initialize("eng");
 
-      const { data: { text } } = await worker.recognize(imageFile);
+      const {
+        data: { text },
+      } = await worker.recognize(imageFile);
       await worker.terminate();
 
       if (text.trim()) {
         onComplete(text);
         toast({
-          title: 'OCR Complete',
-          description: 'Text has been successfully extracted from the image.',
+          title: "OCR Complete",
+          description: "Text has been successfully extracted from the image.",
         });
       } else {
-        throw new Error('No text found in image');
+        throw new Error("No text found in image");
       }
     } catch (error) {
-      console.error('OCR Error:', error);
-      onError(error instanceof Error ? error.message : 'Failed to process image');
+      console.error("OCR Error:", error);
+      onError(
+        error instanceof Error ? error.message : "Failed to process image",
+      );
       toast({
-        title: 'OCR Error',
-        description: 'Failed to extract text from the image.',
-        variant: 'destructive',
+        title: "OCR Error",
+        description: "Failed to extract text from the image.",
+        variant: "destructive",
       });
     } finally {
       setIsProcessing(false);
