@@ -44,6 +44,10 @@ export async function analyzeUploadedContent(
   return {...result, generatedImageUri: undefined };
 }
 
+if (!ai) {
+  throw new Error("Genkit AI is not initialized. Check your GEMINI_API_KEY and configuration.");
+}
+
 const analyzeUploadedContentPrompt = ai.definePrompt({
   name: 'analyzeUploadedContentPrompt',
   input: {schema: AnalyzeUploadedContentInputSchema},

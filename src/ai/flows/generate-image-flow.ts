@@ -18,6 +18,10 @@ export async function generateImage(input: GenerateImageInput): Promise<Generate
   return generateImageFlow(input);
 }
 
+if (!ai) {
+  throw new Error("Genkit AI is not initialized. Check your GEMINI_API_KEY and configuration.");
+}
+
 const generateImageFlow = ai.defineFlow(
   {
     name: 'generateImageFlow',
@@ -31,6 +35,9 @@ const generateImageFlow = ai.defineFlow(
     }
 
     try {
+      if (!ai) {
+        throw new Error("Genkit AI is not initialized. Check your GEMINI_API_KEY and configuration.");
+      }
       const { media } = await ai.generate({
         model: 'googleai/gemini-2.0-flash-exp', // This model supports image generation.
         prompt: [

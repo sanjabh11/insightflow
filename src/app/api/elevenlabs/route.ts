@@ -9,6 +9,8 @@ const BASE_URL = 'https://api.elevenlabs.io/v1/text-to-speech';
  * Response: Audio stream (audio/mpeg)
  * Version 3.0.0 (modular, rollback-ready)
  */
+import { NextRequest, NextResponse } from 'next/server';
+
 export async function POST(req: NextRequest) {
   try {
     const { text, voice = 'Rachel', model = 'eleven_multilingual_v3', language = 'en' } = await req.json();

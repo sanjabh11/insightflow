@@ -113,7 +113,12 @@ export function FileUploadCard({
 
   // Modular v1.4: Browser PDF image extraction utility
   const extractImagesFromPDF = async (file: File): Promise<string[]> => {
-    const pdfjsLib = await import("pdfjs-dist/build/pdf");
+    let pdfjsLib;
+    try {
+      pdfjsLib = await import("pdfjs-dist/build/pdf");
+    } catch (err) {
+      pdfjsLib = await import("pdfjs-dist/legacy/build/pdf");
+    }
     // @ts-ignore
     pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdf.worker.js";
     const arrayBuffer = await file.arrayBuffer();

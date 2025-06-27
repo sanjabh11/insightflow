@@ -27,6 +27,10 @@ export async function answerWithWebSearch(input: AnswerWithWebSearchInput): Prom
   return answerWithWebSearchFlow(input);
 }
 
+if (!ai) {
+  throw new Error("Genkit AI is not initialized. Check your GEMINI_API_KEY and configuration.");
+}
+
 const webSearch = ai.defineTool({
   name: 'webSearch',
   description: 'Searches the web for an answer to the user\'s question.',
