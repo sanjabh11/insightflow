@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 export const runtime = 'edge'; // For fast response
 
@@ -22,7 +21,7 @@ export async function POST(req: NextRequest) {
     // For demonstration, we'll use Gemini to search the web and synthesize an answer
     // This is a placeholder: Replace with your actual Google Search integration
     const searchResults = await fetch(
-      `https://www.googleapis.com/customsearch/v1?q=${encodeURIComponent(query)}&key=${GEMINI_API_KEY}&cx=YOUR_GOOGLE_CSE_CX`,
+      `https://www.googleapis.com/customsearch/v1?q=${encodeURIComponent(query)}&key=${process.env.GEMINI_API_KEY}&cx=YOUR_GOOGLE_CSE_CX`,
       { method: 'GET' }
     );
     if (!searchResults.ok) {

@@ -37,7 +37,7 @@ function validateEnvironment(): string[] {
   const missingVars = [];
   
   if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY.trim() === '') {
-    missingVars.push('GEMINI_API_KEY');
+    missingVars.push('Required environment variable for Gemini AI is missing');
   }
   
   return missingVars;

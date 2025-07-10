@@ -36,7 +36,7 @@ const generateImageFlow = ai.defineFlow(
 
     try {
       if (!ai) {
-        throw new Error("Genkit AI is not initialized. Check your GEMINI_API_KEY and configuration.");
+        throw new Error("Genkit AI is not initialized. Check your configuration.");
       }
       const { media } = await ai.generate({
         model: 'googleai/gemini-2.0-flash-exp', // This model supports image generation.

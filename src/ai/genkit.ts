@@ -12,8 +12,8 @@ let ai: ReturnType<typeof genkit> | null = null;
 
 try {
   if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY.trim() === '') {
-    logError('GEMINI_API_KEY is missing! Please set it in your environment variables.');
-    throw new Error('GEMINI_API_KEY is missing!');
+    logError('Gemini AI API key is missing! Please set it in your environment variables.');
+    throw new Error('Gemini AI API key is missing!');
   }
   ai = genkit({
     plugins: [googleAI()],

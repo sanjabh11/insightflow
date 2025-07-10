@@ -1,5 +1,4 @@
 "use client";
-
 import { useState, useEffect } from 'react';
 
 // Modular Q&A thread: store previous conversations with title and collapsed state
@@ -232,9 +231,10 @@ export default function InsightFlowPage() {
         }
       } else {
         // No file: always use context for web search
-        // Try to extract the last non-follow-up question for web search
+        // Determine if the current question is an explicit follow-up
+        const isExplicitFollowup = /^(follow[- ]?up|same|continue)$/i.test(question.trim());
         const lastRelevant = [...qaHistory].reverse().find(qa => !/follow[- ]?up|search|internet|context|find out|look at/i.test(qa.question));
-        const webSearchQuery = lastRelevant ? lastRelevant.question : question;
+        const webSearchQuery = isExplicitFollowup && lastRelevant ? lastRelevant.question : question;
         finalAnswerData = await answerWithWebSearch({ question: webSearchQuery });
       }
       
@@ -350,39 +350,42 @@ export default function InsightFlowPage() {
           transition={{ duration: 0.5 }}
           className="flex-1 flex flex-col gap-6 w-full md:w-2/4"
         >
-          <div className="space-y-4">
-            <AnimatePresence>
-              {qaHistory.map((qa, idx) => (
-                <motion.div
-                  key={idx}
-                  initial={{ opacity: 0, scale: 0.98 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.98 }}
-                  transition={{ duration: 0.25 }}
-                  className="border rounded-xl p-4 bg-white/80 shadow-sm"
-                >
-                  <div className="font-semibold text-primary mb-1">Q{idx + 1}: {qa.question}</div>
-                  <div className="text-gray-900">{qa.answer}</div>
-                </motion.div>
-              ))}
-            </AnimatePresence>
-          </div>
-          <AnimatePresence>
-            {answerData && (
-              <motion.div
-                initial={{ opacity: 0, y: 24 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 24 }}
-                transition={{ duration: 0.4 }}
-              >
-                <AnswerDisplayCard
-                  answerData={answerData}
-                  isLoading={isLoading}
-                  speechControl={speech}
-                />
-              </motion.div>
+          {/* Chat dialog bubbles */}
+          <div className="flex flex-col gap-2 h-full overflow-y-auto px-2 py-2 bg-gray-50 rounded-lg border min-h-[300px] max-h-[400px]">
+            {qaHistory.length === 0 && (
+              <div className="text-gray-400 text-center my-8">Start the conversation by asking a question!</div>
             )}
-          </AnimatePresence>
+            {qaHistory.map((qa: { question: string; answer: string }, idx: number) => (
+              <div key={idx} className="flex flex-col mb-2">
+                <div className="inline-block px-4 py-2 rounded-2xl shadow bg-blue-100 text-blue-900 self-end" style={{ maxWidth: '80%' }}>
+                  <span className="block font-semibold">You:</span> {qa.question}
+                </div>
+                {qa.answer && (
+                  <div className="inline-block px-4 py-2 rounded-2xl shadow bg-green-100 text-green-900 self-start mt-1" style={{ maxWidth: '80%' }}>
+                    <span className="block font-semibold">AI:</span> {qa.answer}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* Answer display (if present) */}
+          {answerData && (
+            <motion.div
+              initial={{ opacity: 0, y: 24 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 24 }}
+              transition={{ duration: 0.4 }}
+            >
+              <AnswerDisplayCard
+                answerData={answerData}
+                isLoading={isLoading}
+                speechControl={speech}
+              />
+            </motion.div>
+          )}
+
+          {/* EDA controls */}
           {showEDAButton && !edaResult && (
             <motion.button
               whileHover={{ scale: 1.03 }}
@@ -396,169 +399,134 @@ export default function InsightFlowPage() {
             </motion.button>
           )}
           {showEDAButton && edaResult && (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.97 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.97 }}
-              transition={{ duration: 0.4 }}
-            >
-              <VisualizationCard csvDataUri={currentFile.dataUri} />
-            </motion.div>
+            <>
+              <motion.div
+                initial={{ opacity: 0, scale: 0.97 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.97 }}
+                transition={{ duration: 0.4 }}
+              >
+                <AnswerDisplayCard
+                  answerData={edaResult}
+                  isLoading={isEDAloading}
+                  speechControl={speech}
+                />
+              </motion.div>
+              <motion.div
+                initial={{ opacity: 0, scale: 0.97 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.97 }}
+                transition={{ duration: 0.4 }}
+              >
+                <VisualizationCard csvDataUri={currentFile.dataUri} />
+              </motion.div>
+            </>
           )}
-          {currentFile && answerData && (
-            <motion.button
-              whileHover={{ scale: 1.03 }}
-              whileTap={{ scale: 0.97 }}
-              className="w-full mt-2 py-2 px-4 rounded-xl bg-secondary text-primary font-semibold border border-primary hover:bg-primary/10 shadow"
-              onClick={() => {
-                setQuestion("");
-                setAnswerData(null);
-              }}
-              aria-label="Ask Follow-up Question"
-            >
-              Ask Follow-up Question
-            </motion.button>
-          )}
+
         </motion.section>
-        {/* Right Panel: Conversation history and actions */}
+        {/* Right Panel: Previous Conversations */}
         <motion.section
           initial={{ opacity: 0, x: 30 }}
           animate={{ opacity: 1, x: 0 }}
           exit={{ opacity: 0, x: 30 }}
           transition={{ duration: 0.4 }}
-          className="flex flex-col gap-6 w-full md:w-1/4 max-w-xs md:max-w-xs overflow-y-auto"
+          className="flex flex-col gap-4 w-full md:w-1/4 max-w-xs"
         >
-          {conversations.length > 0 ? (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.98 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.98 }}
-              transition={{ duration: 0.25 }}
-              className="mb-4 border rounded-xl p-4 bg-white/90 shadow"
-            >
-              <div className="flex items-center justify-between mb-2">
-                <div className="font-bold text-md text-primary">Previous Conversations</div>
-                <button
-                  className="py-1 px-3 rounded bg-green-600 text-white text-xs font-semibold border border-green-800 hover:bg-green-700"
-                  onClick={() => {
-                    // Export all conversations and current thread (if any)
-                    const exportData = [
-                      ...conversations.map(({ title, conversation }) => ({ title, conversation })),
-                      ...(qaHistory.length > 0 ? [{ title: 'Current Conversation', conversation: qaHistory }] : [])
-                    ];
-                    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = `conversations_${new Date().toISOString()}.json`;
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                    URL.revokeObjectURL(url);
-                  }}
-                  aria-label="Export History"
-                >
-                  Export History
-                </button>
-              </div>
-              <div className="space-y-2 max-h-64 overflow-y-auto">
-                {conversations.map((conv, cIdx) => (
-  <div
-    key={cIdx}
-    className="border rounded p-2 bg-gray-50 transition relative"
-    aria-label="Run EDA"
-  >
-    {/* Collapse/expand and rename controls */}
-    <div className="flex items-center justify-between mb-1">
-      {renamingIdx === cIdx ? (
-        <input
-          className="border px-2 py-1 rounded text-primary font-semibold w-2/3"
-          value={renameValue}
-          autoFocus
-          onChange={e => setRenameValue(e.target.value)}
-          onBlur={() => {
-            setConversations(prev => prev.map((c, idx) => idx === cIdx ? { ...c, title: renameValue || c.title } : c));
-            setRenamingIdx(null);
-          }}
-          onKeyDown={e => {
-            if (e.key === 'Enter') {
-              setConversations(prev => prev.map((c, idx) => idx === cIdx ? { ...c, title: renameValue || c.title } : c));
-              setRenamingIdx(null);
-            }
-          }}
-        />
-      ) : (
-        <span className="font-semibold text-primary cursor-pointer" title="Click to rename" onClick={() => { setRenamingIdx(cIdx); setRenameValue(conv.title); }}>{conv.title}</span>
-      )}
-      <div className="flex items-center gap-2">
-        <button
-          className="text-xs text-blue-700 hover:underline"
-          onClick={() => setConversations(prev => prev.map((c, idx) => idx === cIdx ? { ...c, collapsed: !c.collapsed } : c))}
-          aria-label={conv.collapsed ? 'Expand thread' : 'Collapse thread'}
-        >
-          {conv.collapsed ? 'Expand' : 'Collapse'}
-        </button>
-        <button
-          className="text-xs text-green-700 hover:underline"
-          title="Click to revisit and continue this conversation"
-          onClick={() => {
-            setQaHistory(conv.conversation);
-            setConversations(prev => prev.filter((_, i) => i !== cIdx));
-            setQuestion("");
-            setAnswerData(null);
-          }}
-          aria-label={`Revisit conversation ${cIdx + 1}`}
-        >
-          Continue
-        </button>
-      </div>
-    </div>
-    {!conv.collapsed && (
-      <div>
-        {conv.conversation.map((qa, idx) => (
-          <div key={idx} className="border-b border-gray-200 py-2">
-            <div className="font-semibold text-primary mb-1">Q{idx + 1}: {qa.question}</div>
-            <div className="text-gray-900">{qa.answer}</div>
+          <div className="border rounded p-4 bg-white/70">
+            <h3 className="font-semibold mb-2">Previous Conversations</h3>
+            <div className="space-y-2">
+              {conversations.length === 0 && (
+                <div className="text-gray-400 text-center">No previous conversations yet.</div>
+              )}
+              {conversations.map((conv, cIdx) => (
+                <div key={cIdx} className="border rounded p-2 bg-gray-50 dark:bg-gray-800 dark:border-gray-700 text-gray-900 dark:text-gray-100">
+                  <div className="flex justify-between items-center">
+                    {renamingIdx === cIdx ? (
+                      <input
+                        className="border px-2 py-1 rounded text-primary font-semibold w-2/3"
+                        value={renameValue}
+                        autoFocus
+                        onChange={e => setRenameValue(e.target.value)}
+                        onBlur={() => {
+                          setConversations(prev => prev.map((c, idx) => idx === cIdx ? { ...c, title: renameValue || c.title } : c));
+                          setRenamingIdx(null);
+                        }}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') {
+                            setConversations(prev => prev.map((c, idx) => idx === cIdx ? { ...c, title: renameValue || c.title } : c));
+                            setRenamingIdx(null);
+                          }
+                        }}
+                      />
+                    ) : (
+                      <h4 className="font-medium cursor-pointer" title="Click to rename" onClick={() => { setRenamingIdx(cIdx); setRenameValue(conv.title); }}>{conv.title}</h4>
+                    )}
+                    <div className="space-x-2">
+                      <button
+                        className="text-sm text-blue-600 hover:underline"
+                        onClick={() => {
+                          setConversations(prev => prev.map((c, idx) => idx === cIdx ? { ...c, collapsed: !c.collapsed } : c));
+                        }}
+                        aria-label={conv.collapsed ? 'Expand thread' : 'Collapse thread'}
+                      >
+                        {conv.collapsed ? 'Expand' : 'Collapse'}
+                      </button>
+                      <button
+                        className="text-sm text-blue-600 hover:underline"
+                        onClick={() => {
+                          setQaHistory(conv.conversation);
+                          setConversations(prev => prev.filter((_, idx) => idx !== cIdx));
+                          setQuestion("");
+                          setAnswerData(null);
+                        }}
+                        aria-label={`Revisit conversation ${cIdx + 1}`}
+                      >
+                        Continue
+                      </button>
+                    </div>
+                  </div>
+                  {!conv.collapsed && (
+                    <div>
+                      {conv.conversation.map((qa, idx) => (
+                        <div key={idx} className="mb-1">
+                          <span className="font-semibold text-primary">Q{idx + 1}:</span> {qa.question}
+                          <div className="ml-4 text-gray-900">{qa.answer}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+            {/* Move New Question and Erase History buttons here */}
+            <div className="flex flex-col gap-2 mt-4">
+              <button
+                className="w-full py-2 px-4 rounded bg-blue-500 text-white font-semibold border border-blue-700 hover:bg-blue-600"
+                onClick={() => {
+                  setConversations(prev => qaHistory.length > 0 ? [...prev, { title: `Conversation ${prev.length + 1}`, conversation: qaHistory, collapsed: true }] : prev);
+                  setQaHistory([]);
+                  setQuestion("");
+                  setAnswerData(null);
+                  setCurrentFile(null); // Auto-clear the loaded file when starting a new conversation
+                }}
+                aria-label="Start New Question"
+              >
+                New Question
+              </button>
+              <button
+                className="w-full py-2 px-4 rounded bg-red-500 text-white font-semibold border border-red-700 hover:bg-red-600"
+                onClick={() => {
+                  setQaHistory([]);
+                  setConversations([]);
+                  setQuestion("");
+                  setAnswerData(null);
+                }}
+                aria-label="Erase History"
+              >
+                Erase History
+              </button>
+            </div>
           </div>
-        ))}
-      </div>
-    )}
-  </div>
-))}
-              </div>
-            </motion.div>
-          ) : null}
-          {/* New Question Button: Always visible if there is any Q&A history */}
-          {qaHistory.length > 0 && (
-            <button
-              className="w-full mt-2 py-2 px-4 rounded bg-blue-500 text-white font-semibold border border-blue-700 hover:bg-blue-600"
-              onClick={() => {
-                setConversations(prev => qaHistory.length > 0 ? [...prev, { title: `Conversation ${prev.length + 1}`, conversation: qaHistory, collapsed: true }] : prev);
-                setQaHistory([]);
-                setQuestion("");
-                setAnswerData(null);
-                setCurrentFile(null); // Auto-clear the loaded file when starting a new conversation
-              }}
-              aria-label="Start New Question"
-            >
-              New Question
-            </button>
-          )}
-          {/* Erase History Button: Always visible if there is any Q&A/conversation history */}
-          {(qaHistory.length > 0 || conversations.length > 0) && (
-            <button
-              className="w-full mt-2 py-2 px-4 rounded bg-red-500 text-white font-semibold border border-red-700 hover:bg-red-600"
-              onClick={() => {
-                setQaHistory([]);
-                setConversations([]);
-                setQuestion("");
-                setAnswerData(null);
-              }}
-              aria-label="Erase History"
-            >
-              Erase History
-            </button>
-          )}
         </motion.section>
       </main>
       <footer className="text-center p-4 text-sm text-muted-foreground border-t border-border">
