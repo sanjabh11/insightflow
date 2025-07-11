@@ -19,8 +19,8 @@ import {
   VolumeX,
   Image as ImageIcon,
 } from "lucide-react";
-import type { AnalyzeUploadedContentOutput } from "@/ai/flows/analyze-uploaded-content";
-import type { AnswerWithWebSearchOutput } from "@/ai/flows/answer-with-web-search";
+import type { AnalyzeUploadedContentOutput } from "@/ai/flows/analyze-uploaded-content-schemas";
+import type { AnswerWithWebSearchOutput } from "@/ai/flows/answer-with-web-search-schemas";
 import type { useSpeech } from "@/hooks/useSpeech";
 import { useEffect, useRef, useState } from "react";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -116,7 +116,7 @@ export function AnswerDisplayCard({
   // Radio group for voice selection
   const VoicePicker = (
     <div className="mb-2">
-      <label className="block text-xs font-semibold text-blue-900 mb-1">Voice</label>
+      <label className="block text-xs font-semibold text-blue-900 dark:text-blue-300 mb-1">Voice</label>
       <RadioGroup
         value={selectedVoiceKey}
         onValueChange={setSelectedVoiceKey}
@@ -181,19 +181,18 @@ export function AnswerDisplayCard({
     answerData.answer.toLowerCase().includes("sorry");
 
   return (
-    <Card className="w-full max-w-xl mx-auto bg-white/90 shadow-lg rounded-2xl border-0 p-0">
+    <Card className="mobile-card glass w-full max-w-xl mx-auto mb-8 p-0 overflow-visible shadow-2xl dark:text-slate-100">
       <CardHeader className="flex flex-row items-center justify-between px-6 pt-6 pb-2">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           {isError ? (
-            <AlertCircle className="w-6 h-6 text-red-500" />
+            <AlertCircle className="w-7 h-7 text-red-500" />
           ) : (
-            <BrainCircuit className="w-6 h-6 text-indigo-600" />
+            <BrainCircuit className="w-7 h-7 text-indigo-600" />
           )}
-          <CardTitle className="text-lg font-semibold text-blue-900">
+          <CardTitle className="text-lg font-extrabold text-blue-900 dark:text-blue-300 tracking-tight">
             AI Response
           </CardTitle>
         </div>
-        
         {answerData && answerData.answer && !isError && (
           <div className="flex items-center gap-2">
             <Button
@@ -210,7 +209,6 @@ export function AnswerDisplayCard({
                 <Volume2 className="w-5 h-5 text-indigo-600" />
               )}
             </Button>
-            {/* Stop/close button for AI voice playback */}
             {(isSpeaking || (audioRef.current && !audioRef.current.paused)) && (
               <Button
                 variant="outline"
@@ -242,17 +240,18 @@ export function AnswerDisplayCard({
             <AlertDescription>{answerData.answer}</AlertDescription>
           </Alert>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-6">
             {VoicePicker}
             {audioError && (
               <div className="text-xs mb-2" style={{ color: '#2563eb' }}>{audioError}</div>
             )}
-            <div className="rounded-xl bg-blue-50 text-blue-900 px-5 py-3 shadow-sm break-words font-sans text-base leading-relaxed">
-              <p className="whitespace-pre-line">{answerData.answer}</p>
+            <div className="rounded-2xl bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 text-blue-900 px-6 py-4 shadow-inner break-words font-sans text-base leading-relaxed border border-indigo-100">
+              <p className="whitespace-pre-line font-medium text-lg">
+                {answerData.answer}
+              </p>
             </div>
-
             {answerData.generatedImageUri && (
-              <div className="mt-4 p-4 border rounded-md bg-secondary/30">
+              <div className="mt-4 p-4 border rounded-xl bg-secondary/30 shadow-lg">
                 <h3 className="text-sm font-semibold mb-2 flex items-center gap-1">
                   <ImageIcon className="w-4 h-4" />
                   Generated Image:
@@ -271,7 +270,6 @@ export function AnswerDisplayCard({
                 </p>
               </div>
             )}
-
             {answerData.sources && answerData.sources.length > 0 && (
               <div className="mt-4">
                 <h3 className="text-sm font-semibold mb-2 flex items-center gap-1">

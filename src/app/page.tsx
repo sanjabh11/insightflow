@@ -38,8 +38,10 @@ import { VisualizationCard } from '@/components/VisualizationCard';
 import { motion, AnimatePresence } from 'framer-motion';
 import { DarkModeToggle } from '@/components/DarkModeToggle'; // Version 1.0 modular import
 
-import { analyzeUploadedContent, type AnalyzeUploadedContentOutput } from '@/ai/flows/analyze-uploaded-content';
-import { answerWithWebSearch, type AnswerWithWebSearchOutput } from '@/ai/flows/answer-with-web-search';
+import { analyzeUploadedContent } from '@/ai/flows/analyze-uploaded-content';
+import type { AnalyzeUploadedContentOutput } from '@/ai/flows/analyze-uploaded-content-schemas';
+import { answerWithWebSearch } from '@/ai/flows/answer-with-web-search';
+import type { AnswerWithWebSearchOutput } from '@/ai/flows/answer-with-web-search-schemas';
 import { generateImage as generateImageFlow, type GenerateImageOutput } from '@/ai/flows/generate-image-flow';
 import { useToast } from "@/hooks/use-toast";
 import { useSpeech } from '@/hooks/useSpeech';
@@ -179,11 +181,39 @@ export default function InsightFlowPage() {
           }
           return file.dataUri;
         };
-        const analysisResult = await analyzeUploadedContent({
-          fileDataUri: getFileContentForAnalysis(currentFile),
-          question: fullContext,
-          fileType: currentFile.type
+        const fileDataUri = getFileContentForAnalysis(currentFile);
+        const response = await fetch('/api/analyze', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            fileDataUri,
+            question: fullContext,
+            fileType: currentFile.type,
+          }),
         });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          if (response.status === 413) {
+            // File too large
+            toast({
+              title: "File Too Large",
+              description: errorData.details || "The uploaded file is too large for analysis. Please upload a smaller file.",
+              variant: "destructive"
+            });
+            return;
+          }
+          toast({
+            title: "Analysis Error",
+            description: errorData.details || 'Analysis failed',
+            variant: "destructive"
+          });
+          return;
+        }
+
+        const analysisResult = await response.json();
         finalAnswerData = analysisResult;
 
         // Always extract the answer for further checks
@@ -298,11 +328,43 @@ export default function InsightFlowPage() {
         }
         return file.dataUri;
       };
-      const analysisResult = await analyzeUploadedContent({
-        fileDataUri: getFileContentForAnalysis(currentFile),
-        question: 'Run EDA',
-        fileType: currentFile.type,
+      // For EDA, only send the preview, not the full data URI, to stay within token limits.
+      // We must format it as a valid data URI for the Gemini API.
+      const previewText = currentFile.preview || '';
+      if (!previewText.trim()) {
+        toast({
+          title: 'EDA Error',
+          description: 'Cannot run EDA: CSV preview could not be generated.',
+          variant: 'destructive',
+        });
+        setIsRunningEDA(false);
+        return;
+      }
+      const fileContentForEDA = `data:text/plain;base64,${btoa(previewText)}`;
+
+      const response = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          fileDataUri: fileContentForEDA,
+          question: 'Run EDA on the provided data sample.', // More explicit question for the AI
+          fileType: 'text/csv', // Explicitly set type for clarity
+        }),
       });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        toast({
+        title: "EDA Error",
+        description: errorData.details || 'Analysis failed',
+        variant: "destructive"
+      });
+      return;
+      }
+
+      const analysisResult = await response.json();
       setEdaResult(analysisResult);
       toast({ title: "EDA Complete", description: "Exploratory Data Analysis has completed for your CSV file." });
     } catch (error) {

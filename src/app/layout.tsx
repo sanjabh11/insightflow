@@ -19,10 +19,16 @@ export default function RootLayout({
         className="antialiased bg-background text-foreground min-h-screen"
         suppressHydrationWarning
       >
-        <ThemeProvider>
-          {children}
-          <Toaster />
-        </ThemeProvider>
+        {/*
+          Main app container: centers all content, provides responsive padding, and ensures glassmorphism and gradient background are visible.
+          See globals.css for .centered-app-container and glass styles.
+        */}
+        <div className="centered-app-container">
+          <ThemeProvider>
+            {children}
+            <Toaster />
+          </ThemeProvider>
+        </div>
       </body>
     </html>
   );

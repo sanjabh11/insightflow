@@ -368,26 +368,21 @@ export function VisualizationCard({ csvDataUri }: VisualizationCardProps) {
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <LayoutGrid className="w-6 h-6 text-primary" />
-          Exploratory Data Analysis (EDA)
+    <Card className="mobile-card glass w-full max-w-4xl mx-auto mb-8 p-0 overflow-visible shadow-2xl">
+      <CardHeader className="px-6 pt-6 pb-2">
+        <CardTitle className="mobile-header flex items-center gap-3">
+          <BarChart3 className="w-7 h-7 text-indigo-600" />
+          Data Visualization
         </CardTitle>
-        <CardDescription>
-          Interactive preview and analysis of the uploaded CSV file.
+        <CardDescription className="text-neutral-500">
+          Visualize your CSV data with charts and statistics.
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-6">
-        <Accordion
-          type="multiple"
-          defaultValue={["table-preview", "column-summary"]}
-          className="w-full"
-        >
+      <CardContent className="px-6 pb-6">
+        <Accordion type="multiple" defaultValue={["table-preview", "column-summary"]} className="w-full">
           <AccordionItem value="table-preview">
             <AccordionTrigger className="text-lg font-semibold">
-              <LayoutGrid className="w-5 h-5 mr-2" /> Table Preview (First 20
-              Rows)
+              <LayoutGrid className="w-5 h-5 mr-2" /> Table Preview (First 20 Rows)
             </AccordionTrigger>
             <AccordionContent>
               <ScrollArea className="h-[300px] w-full border rounded-md">
@@ -643,3 +638,4 @@ export function VisualizationCard({ csvDataUri }: VisualizationCardProps) {
     </Card>
   );
 }
+

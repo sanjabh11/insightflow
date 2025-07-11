@@ -42,7 +42,7 @@ interface FileUploadCardProps {
   } | null;
 }
 
-const MAX_FILE_SIZE_MB = 1024; // Increased to 60MB
+const MAX_FILE_SIZE_MB = 60; // Increased to 60MB
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
 
 const ACCEPTED_FILE_TYPES = {
@@ -97,6 +97,19 @@ export function FileUploadCard({
     file: File,
     dataUri: string,
   ): Promise<string> => {
+    if (file.type === "text/csv" || file.name.toLowerCase().endsWith('.csv')) {
+      // Parse first 100 rows
+      const text = await file.text();
+      const parsed = Papa.parse(text, { preview: 100 });
+      if (parsed.data && parsed.data.length > 0) {
+        // Convert parsed data to CSV string (limit columns to 30)
+        const rows = parsed.data as string[][];
+        const colLimit = 30;
+        const previewRows = rows.map(row => row.slice(0, colLimit).join(",")).join("\n");
+        return previewRows.slice(0, 5000); // Limit preview to 5000 chars
+      }
+      return "";
+    }
     if (file.type.startsWith("image/")) {
       return dataUri; // Use the image directly as preview
     }
@@ -277,7 +290,21 @@ export function FileUploadCard({
                 );
               }
             } else {
-              preview = await generatePreview(file, e.target.result as string);
+              try {
+                preview = await generatePreview(file, e.target.result as string);
+              } catch (err) {
+                preview = "";
+              }
+            }
+            // Defensive: If CSV and preview is empty, show error and abort
+            if ((file.type === "text/csv" || file.name.toLowerCase().endsWith('.csv')) && !preview.trim()) {
+              toast({
+                title: "CSV Preview Error",
+                description: "Could not generate a preview for this CSV. Please check the file format or try a different file.",
+                variant: "destructive"
+              });
+              setIsUploading(false);
+              return;
             }
             onFileChange({
               name: file.name,
@@ -413,57 +440,62 @@ export function FileUploadCard({
   };
 
   return (
-    <Card
-      className={`w-full max-w-xl mx-auto bg-white/90 shadow-lg rounded-2xl border-0 transition-all ${dragOver ? "ring-2 ring-blue-400" : ""}`}
-      onDrop={handleDrop}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-    >
+    <Card className="mobile-card glass w-full max-w-xl mx-auto mb-8 p-0 overflow-visible shadow-2xl">
       <CardHeader className="px-6 pt-6 pb-2">
-        <CardTitle className="flex items-center gap-2 text-lg font-semibold text-blue-900">
-          <UploadCloud className="w-7 h-7 text-indigo-600" />
-          Upload File
+        <CardTitle className="mobile-header flex items-center gap-3">
+          <UploadCloud className="w-8 h-8 text-indigo-500 animate-pulse" />
+          Upload a File
         </CardTitle>
-        <CardDescription className="text-blue-900/70">
-          Upload a file for analysis (max {MAX_FILE_SIZE_MB}MB). Supported: CSV,
-          XLSX, DOCX, TXT, PDF, Images, Audio, ZIP.
+        <CardDescription className="text-neutral-500">
+          Supported: CSV, PDF, DOCX, XLSX, TXT, JSON, ZIP, PNG, JPG, MP3, WAV
         </CardDescription>
       </CardHeader>
       <CardContent className="px-6 pb-6">
-        <div className="space-y-3">
-          {/* Modular v1.3: Image gallery for PDF/DOCX */}
-          <div className="my-4">
-            <div className="font-semibold mb-2 text-blue-900">
-              Extracted Images
+        <div
+          className={`flex flex-col items-center justify-center border-2 border-dashed border-indigo-300 bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 rounded-2xl transition-all duration-300 p-8 mb-4 w-full cursor-pointer hover:shadow-lg hover:border-indigo-500 ${dragOver ? 'ring-4 ring-indigo-200 scale-105' : ''}`}
+          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+          onDragLeave={(e) => { e.preventDefault(); setDragOver(false); }}
+          onDrop={async (e) => {
+            e.preventDefault(); setDragOver(false);
+            const file = e.dataTransfer.files[0];
+            await handleFileSelect(file);
+          }}
+          onClick={() => document.getElementById('file-upload-input')?.click()}
+          role="button"
+          tabIndex={0}
+          aria-label="Upload file by clicking or dragging"
+        >
+          <UploadCloud className="w-14 h-14 text-indigo-400 mb-2 animate-bounce" />
+          <span className="text-lg font-semibold text-indigo-700 mb-1">Drag & Drop or Click to Upload</span>
+          <span className="text-xs text-muted-foreground">Max 60MB. Most document, image, audio, and archive types supported.</span>
+          {extractedImages.length > 0 ? (
+            <div className="flex flex-wrap gap-3 mt-2">
+              {extractedImages.map((img, idx) => (
+                <div
+                  key={idx}
+                  className="border rounded-lg bg-white/80 p-2 shadow max-w-[140px] max-h-[140px] flex items-center justify-center"
+                >
+                  {img ? (
+                    <img
+                      src={img}
+                      alt={`Extracted ${idx + 1}`}
+                      className="object-contain max-h-[120px] max-w-[120px]"
+                    />
+                  ) : (
+                    <span className="text-xs text-gray-400">
+                      Image not available
+                    </span>
+                  )}
+                </div>
+              ))}
             </div>
-            {extractedImages.length > 0 ? (
-              <div className="flex flex-wrap gap-3">
-                {extractedImages.map((img, idx) => (
-                  <div
-                    key={idx}
-                    className="border rounded-lg bg-white/80 p-2 shadow max-w-[140px] max-h-[140px] flex items-center justify-center"
-                  >
-                    {img ? (
-                      <img
-                        src={img}
-                        alt={`Extracted ${idx + 1}`}
-                        className="object-contain max-h-[120px] max-w-[120px]"
-                      />
-                    ) : (
-                      <span className="text-xs text-gray-400">
-                        Image not available
-                      </span>
-                    )}
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-xs text-gray-400 italic">
-                No images extracted from this file.
-              </div>
-            )}
-          </div>
+          ) : (
+            <div className="text-xs text-gray-400 italic mt-2">
+              No images extracted from this file.
+            </div>
+          )}
           {/* End modular v1.3 */}
+          {/** End extractedImages section **/}
           {currentFile && (
             <div className="flex items-center justify-between mb-2 bg-blue-50 rounded-full px-4 py-2 shadow-sm">
               <div className="flex flex-col w-full">
@@ -473,25 +505,22 @@ export function FileUploadCard({
                     {currentFile.name}
                   </span>
                 </div>
-                <div className="mt-2 p-2 bg-white/50 rounded-lg text-sm text-blue-900 max-h-32 overflow-y-auto">
-                  {currentFile.preview ? (
-                    currentFile.type.startsWith("image/") ? (
-                      <img
-                        src={currentFile.preview}
-                        alt="Preview"
-                        className="max-h-28 object-contain mx-auto"
-                      />
-                    ) : (
-                      <pre className="whitespace-pre-wrap text-xs">
-                        {currentFile.preview}
-                      </pre>
-                    )
-                  ) : (
-                    <span className="text-xs text-gray-400 italic">
-                      No preview available for this file.
-                    </span>
-                  )}
-                </div>
+                {/* Only show preview for images or small non-CSV text files */}
+                {currentFile.type.startsWith("image/") ? (
+                  <div className="mt-2 p-2 bg-white/50 rounded-lg text-sm text-blue-900 max-h-32 overflow-y-auto">
+                    <img
+                      src={currentFile.preview}
+                      alt="Preview"
+                      className="max-h-28 object-contain mx-auto"
+                    />
+                  </div>
+                ) : currentFile.type !== "text/csv" && currentFile.preview ? (
+                  <div className="mt-2 p-2 bg-white/50 rounded-lg text-sm text-blue-900 max-h-32 overflow-y-auto">
+                    <pre className="whitespace-pre-wrap text-xs">
+                      {currentFile.preview}
+                    </pre>
+                  </div>
+                ) : null}
               </div>
               <Button
                 variant="ghost"
@@ -558,7 +587,7 @@ export function FileUploadCard({
               </div>
             )}
           </div>
-        </div>
+        </div> {/* <-- Close main dropzone container */}
       </CardContent>
     </Card>
   );
